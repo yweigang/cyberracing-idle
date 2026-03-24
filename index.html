@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Cyberracing Idle</title>
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+<div id="app">
+
+  <!-- ── Header / HUD ──────────────────────────────────────────────────── -->
+  <header id="header">
+    <div id="logo">CYBER<span>RACING</span> IDLE</div>
+    <div id="hud">
+      <div class="hud-stat">
+        <div class="hud-label">Money</div>
+        <div class="hud-value" id="hud-money">$0</div>
+      </div>
+      <div class="hud-stat">
+        <div class="hud-label">Income</div>
+        <div class="hud-value" id="hud-ips">$0/s</div>
+      </div>
+      <div class="hud-stat">
+        <div class="hud-label">Reputation</div>
+        <div class="hud-value" id="hud-rep">0 REP</div>
+      </div>
+      <div class="hud-stat">
+        <div class="hud-label">Prestige</div>
+        <div class="hud-value" id="hud-pp">0 PP</div>
+      </div>
+    </div>
+  </header>
+
+  <!-- ── Tab Bar ────────────────────────────────────────────────────────── -->
+  <nav id="tab-bar">
+    <button class="tab-btn active" data-tab="garage">Garage</button>
+    <button class="tab-btn" data-tab="championships">Championships</button>
+    <button class="tab-btn" data-tab="drivers">Drivers</button>
+    <button class="tab-btn" data-tab="prestige">Prestige</button>
+  </nav>
+
+  <!-- ── Main Layout ───────────────────────────────────────────────────── -->
+  <div id="main">
+
+    <!-- Content -->
+    <div id="content">
+
+      <!-- Garage Panel -->
+      <div id="panel-garage" class="tab-panel active"></div>
+
+      <!-- Championships Panel -->
+      <div id="panel-championships" class="tab-panel"></div>
+
+      <!-- Drivers Panel -->
+      <div id="panel-drivers" class="tab-panel"></div>
+
+      <!-- Prestige Panel -->
+      <div id="panel-prestige" class="tab-panel"></div>
+
+    </div>
+
+    <!-- Sidebar (Event Feed) -->
+    <aside id="sidebar">
+      <div class="sidebar-label">Event Feed</div>
+      <div id="notification-feed">
+        <div class="notif notif-info">Game started. Your GT4 is on track.</div>
+      </div>
+    </aside>
+
+  </div>
+</div>
+
+<!-- Scripts: data → game → ui -->
+<script src="js/data.js"></script>
+<script src="js/game.js"></script>
+<script src="js/ui.js"></script>
+<script>
+  // Boot
+  initGame();
+  initUI();
+</script>
+</body>
+</html>
