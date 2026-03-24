@@ -199,6 +199,21 @@ select { font-family: inherit; }
   padding: 16px 0;
 }
 
+.wip-screen {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 300px;
+  gap: 12px;
+  color: var(--text-3);
+}
+.wip-icon  { font-size: 48px; }
+.wip-title { font-size: 20px; font-weight: 600; color: var(--text-2); letter-spacing: 1px; }
+.wip-desc  { font-size: 13px; }
+
+.tab-btn.wip { opacity: 0.45; }
+
 /* ─── Buttons ────────────────────────────────────────────────────────────── */
 .btn {
   background: var(--bg-4);
@@ -445,7 +460,28 @@ select { font-family: inherit; }
   flex-direction: column;
   gap: 8px;
 }
+.champ-card.champ-locked {
+  border-top-color: #2a2a3a;
+  opacity: 0.7;
+  filter: saturate(0.3);
+}
+.champ-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 8px;
+}
 .champ-card-name { font-weight: 600; font-size: 14px; }
+.champ-completions {
+  font-size: 11px;
+  color: var(--green);
+  background: #0a1e12;
+  border: 1px solid #1a4030;
+  border-radius: 10px;
+  padding: 2px 7px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
 .champ-classes { font-size: 11px; color: var(--text-3); letter-spacing: 1px; }
 .champ-desc { font-size: 12px; color: var(--text-2); line-height: 1.4; flex: 1; }
 .champ-stats {
@@ -455,6 +491,20 @@ select { font-family: inherit; }
   font-size: 11px;
   color: var(--text-2);
 }
+.champ-lock-reasons {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.lock-reason {
+  font-size: 11px;
+  padding: 3px 7px;
+  border-radius: var(--radius);
+  display: block;
+}
+.lock-reason.rep    { background: #1a0d22; color: #bb88ff; border: 1px solid #3a1a55; }
+.lock-reason.prereq { background: #1a1200; color: var(--amber); border: 1px solid #443300; }
+.lock-reason.money  { background: #1a1200; color: #ffcc44; border: 1px solid #443300; }
 
 /* Active champ cards */
 .champ-active-card {

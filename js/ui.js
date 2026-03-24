@@ -289,12 +289,30 @@ function renderChampionships() {
 
   availHtml += '<div class="champ-grid">';
   CHAMPIONSHIPS.forEach(champDef => {
-    const cost = champDef.entryFee;
-    const canAfford = G.money >= cost;
+    const repOk    = G.reputation >= (champDef.repRequired || 0);
+    const prereqOk = checkChampionshipPrerequisite(champDef);
+    const hardLocked = !repOk || !prereqOk;
+    const canAfford  = G.money >= champDef.entryFee;
+    const canEnter   = !hardLocked && canAfford;
+    const completions = G.champCompletions[champDef.id] || 0;
+
+    // Build lock reasons list
+    const lockReasons = [];
+    if (!repOk)
+      lockReasons.push(`<span class="lock-reason rep">⬡ ${formatNumber(champDef.repRequired)} REP required</span>`);
+    if (!prereqOk) {
+      const label = getPrerequisiteLabel(champDef);
+      lockReasons.push(`<span class="lock-reason prereq">🏆 Complete ${label} first</span>`);
+    }
+    if (!hardLocked && !canAfford)
+      lockReasons.push(`<span class="lock-reason money">💰 $${formatNumber(champDef.entryFee)} entry fee</span>`);
 
     availHtml += `
-      <div class="champ-card" style="--cls-color: ${champDef.color}">
-        <div class="champ-card-name" style="color: ${champDef.color}">${champDef.name}</div>
+      <div class="champ-card ${hardLocked ? 'champ-locked' : ''}" style="--cls-color: ${champDef.color}">
+        <div class="champ-card-header">
+          <div class="champ-card-name" style="color: ${hardLocked ? '#555' : champDef.color}">${hardLocked ? '🔒 ' : ''}${champDef.name}</div>
+          ${completions > 0 ? `<div class="champ-completions">✓ ${completions}×</div>` : ''}
+        </div>
         <div class="champ-classes">${champDef.allowedClasses.join(', ')}</div>
         <div class="champ-desc">${champDef.description}</div>
         <div class="champ-stats">
@@ -303,9 +321,10 @@ function renderChampionships() {
           <span>📈 +${champDef.repPerRound} REP/round</span>
           <span>💹 +${Math.round(champDef.incomeBonus * 100)}% income</span>
         </div>
-        <button class="btn enter-champ-btn ${canAfford ? '' : 'disabled'}"
-          data-champ="${champDef.id}" ${canAfford ? '' : 'disabled'}>
-          Enter — $${formatNumber(cost)}
+        ${lockReasons.length > 0 ? `<div class="champ-lock-reasons">${lockReasons.join('')}</div>` : ''}
+        <button class="btn enter-champ-btn ${canEnter ? '' : 'disabled'}"
+          data-champ="${champDef.id}" ${canEnter ? '' : 'disabled'}>
+          Enter — $${formatNumber(champDef.entryFee)}
         </button>
       </div>`;
   });
@@ -431,96 +450,11 @@ function renderDrivers() {
 
 function renderPrestige() {
   const container = document.getElementById('panel-prestige');
-
-  const canP = canPrestige();
-  const ppGain = calcPrestigePoints();
-
-  let html = `
-    <div class="section-header">SEASON RESET</div>
-    <div class="prestige-info">
-      <div class="prestige-season">Season ${G.season}</div>
-      <div class="prestige-pp">You have <span class="pp-value">${G.prestigePoints} PP</span></div>
-      <div class="prestige-gain">Resetting now would grant <span class="pp-gain">+${ppGain} PP</span></div>
-      <div class="prestige-warning">
-        ${canP
-          ? 'A reset will clear car upgrades and money, but driver XP, REP, and unlocked classes persist.'
-          : 'Complete at least one championship this season to unlock a Season Reset.'}
-      </div>
-      <button class="btn btn-prestige ${canP ? '' : 'disabled'}" id="prestige-btn" ${canP ? '' : 'disabled'}>
-        ${canP ? `Reset Season — Gain ${ppGain} PP` : 'Complete a championship first'}
-      </button>
-    </div>
-
-    <div class="section-header">PRESTIGE SHOP</div>
-    <div class="prestige-shop-grid">`;
-
-  PRESTIGE_ITEMS.forEach(item => {
-    const purchased = G.prestige.purchased.filter(p => p === item.id).length;
-    const maxed = item.maxPurchases && purchased >= item.maxPurchases;
-    const canBuy = !maxed && G.prestigePoints >= item.cost;
-
-    html += `
-      <div class="prestige-item ${maxed ? 'maxed' : ''}">
-        <div class="pi-name">${item.name}</div>
-        <div class="pi-desc">${item.description}</div>
-        ${item.maxPurchases ? `<div class="pi-count">${purchased}/${item.maxPurchases}</div>` : ''}
-        <button class="btn ${canBuy ? '' : 'disabled'} prestige-buy-btn"
-          data-item="${item.id}" ${canBuy ? '' : 'disabled'}>
-          ${maxed ? 'Maxed' : item.cost + ' PP'}
-        </button>
-      </div>`;
-  });
-
-  html += `</div>
-
-    <div class="section-header">STATS</div>
-    <div class="stats-grid">
-      <div class="stat-row"><span>Total Earned</span><span>$${formatNumber(G.totalEarned)}</span></div>
-      <div class="stat-row"><span>Season Resets</span><span>${G.prestige.totalResets}</span></div>
-      <div class="stat-row"><span>Championships Completed</span><span>${G.completedChampionships.length}</span></div>
-      <div class="stat-row"><span>Cars Owned</span><span>${G.cars.length}</span></div>
-      <div class="stat-row"><span>Drivers Signed</span><span>${G.drivers.length}</span></div>
-    </div>
-
-    <div class="section-header danger-zone">DANGER ZONE</div>
-    <button class="btn btn-danger" id="reset-save-btn">Delete Save & Restart</button>
-  `;
-
-  container.innerHTML = html;
-
-  const prestigeBtn = container.querySelector('#prestige-btn');
-  if (prestigeBtn && !prestigeBtn.disabled) {
-    prestigeBtn.addEventListener('click', () => {
-      if (!confirm('Reset the season? Car upgrades and money will be cleared. This cannot be undone.')) return;
-      const result = doPrestige();
-      if (result.ok) renderPrestige();
-    });
-  }
-
-  container.querySelectorAll('.prestige-buy-btn:not([disabled])').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const item = PRESTIGE_ITEMS.find(i => i.id === btn.dataset.item);
-      if (!item || G.prestigePoints < item.cost) return;
-      G.prestigePoints -= item.cost;
-      G.prestige.purchased.push(item.id);
-
-      // Apply effect
-      if (item.id === 'factory_backing') G.prestige.permanentBonuses.sponsorBonus += 0.25;
-      if (item.id === 'head_start') G.prestige.permanentBonuses.headStartLevels = Math.min(5, G.prestige.permanentBonuses.headStartLevels + 3);
-
-      addNotification(`Purchased: ${item.name}`, 'success');
-      renderPrestige();
-    });
-  });
-
-  const resetBtn = container.querySelector('#reset-save-btn');
-  if (resetBtn) {
-    resetBtn.addEventListener('click', () => {
-      if (!confirm('Delete all save data and restart? This is permanent!')) return;
-      resetGame();
-      window.location.reload();
-    });
-  }
+  container.innerHTML = `<div class="wip-screen">
+    <div class="wip-icon">🚧</div>
+    <div class="wip-title">Work in Progress</div>
+    <div class="wip-desc">The Prestige system is coming in a future update.</div>
+  </div>`;
 }
 
 // ─── Fast UI Refresh (HUD only — no DOM reconstruction) ─────────────────────

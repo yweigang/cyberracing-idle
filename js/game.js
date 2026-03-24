@@ -34,6 +34,7 @@ function createDefaultState() {
     drivers: [],
     activeChampionships: [],
     completedChampionships: [],
+    champCompletions: {},      // { champId: totalCount } — persists across season resets
     prestige: {
       totalResets: 0,
       permanentBonuses: {
@@ -154,9 +155,29 @@ function upgradeGarage() {
 
 let _champIdCounter = 1;
 
+function hasCompletedChampionship(champId) {
+  return (G.champCompletions[champId] || 0) > 0;
+}
+
+function checkChampionshipPrerequisite(champDef) {
+  if (!champDef.prerequisiteChampionship) return true;
+  const ids = Array.isArray(champDef.prerequisiteChampionship)
+    ? champDef.prerequisiteChampionship
+    : [champDef.prerequisiteChampionship];
+  return ids.some(id => hasCompletedChampionship(id));
+}
+
 function enterChampionship(definitionId, carId) {
   const champDef = getChampionshipById(definitionId);
   if (!champDef) return { ok: false, msg: 'Unknown championship.' };
+
+  if (G.reputation < (champDef.repRequired || 0))
+    return { ok: false, msg: `Need ${formatNumber(champDef.repRequired)} REP to enter.` };
+
+  if (!checkChampionshipPrerequisite(champDef)) {
+    const label = getPrerequisiteLabel(champDef);
+    return { ok: false, msg: `Complete ${label} first.` };
+  }
 
   const car = G.cars.find(c => c.id === carId);
   if (!car) return { ok: false, msg: 'Car not found.' };
@@ -356,6 +377,7 @@ function tick(deltaMs) {
           season: G.season,
           completedAt: now,
         });
+        G.champCompletions[entry.definitionId] = (G.champCompletions[entry.definitionId] || 0) + 1;
 
         addNotification(`${champDef.name} complete! +${entry.repEarned} REP, +$${formatNumber(bonusCash)} bonus.`, 'success');
 
@@ -412,6 +434,7 @@ function applyOfflineProgress() {
         season: G.season,
         completedAt: Date.now(),
       });
+      G.champCompletions[entry.definitionId] = (G.champCompletions[entry.definitionId] || 0) + 1;
       if (car) car.championshipId = null;
       entry._completed = true;
     }

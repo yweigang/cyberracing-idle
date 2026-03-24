@@ -167,10 +167,12 @@ const CHAMPIONSHIPS = [
     allowedClasses: ['GT4'],
     rounds: 8,
     roundDurationSec: 60,
-    entryFee: 2000,
+    entryFee: 5000,
+    repRequired: 0,
+    prerequisiteChampionship: null,
     repPerRound: 100,
-    incomeBonus: 0.15,       // +15% income while active
-    finalBonusMult: 2.5,     // final round pays 2.5× a normal round
+    incomeBonus: 0.15,
+    finalBonusMult: 2.5,
     color: '#4a8fff',
     description: '8-round regional sprint series. Perfect for a new team.',
   },
@@ -181,7 +183,9 @@ const CHAMPIONSHIPS = [
     allowedClasses: ['GT3'],
     rounds: 10,
     roundDurationSec: 90,
-    entryFee: 15000,
+    entryFee: 50000,
+    repRequired: 800,
+    prerequisiteChampionship: 'gt4_regional',
     repPerRound: 200,
     incomeBonus: 0.20,
     finalBonusMult: 3.0,
@@ -195,7 +199,9 @@ const CHAMPIONSHIPS = [
     allowedClasses: ['GT3', 'LMP3', 'LMP2'],
     rounds: 12,
     roundDurationSec: 120,
-    entryFee: 80000,
+    entryFee: 300000,
+    repRequired: 3500,
+    prerequisiteChampionship: 'gt_world_challenge',
     repPerRound: 350,
     incomeBonus: 0.25,
     finalBonusMult: 3.5,
@@ -206,10 +212,12 @@ const CHAMPIONSHIPS = [
     id: 'elms',
     name: 'European Le Mans Series',
     shortName: 'ELMS',
-    allowedClasses: ['GT3', 'LMP2'],
+    allowedClasses: ['GT3', 'LMP3'],
     rounds: 6,
     roundDurationSec: 150,
-    entryFee: 200000,
+    entryFee: 500000,
+    repRequired: 5000,
+    prerequisiteChampionship: 'gt_world_challenge',
     repPerRound: 400,
     incomeBonus: 0.30,
     finalBonusMult: 4.0,
@@ -223,7 +231,9 @@ const CHAMPIONSHIPS = [
     allowedClasses: ['LMP3', 'LMP2', 'HYPERCAR'],
     rounds: 8,
     roundDurationSec: 180,
-    entryFee: 500000,
+    entryFee: 2000000,
+    repRequired: 20000,
+    prerequisiteChampionship: ['imsa_weathertech', 'elms'], // either one
     repPerRound: 600,
     incomeBonus: 0.35,
     finalBonusMult: 5.0,
@@ -237,7 +247,9 @@ const CHAMPIONSHIPS = [
     allowedClasses: ['F1'],
     rounds: 24,
     roundDurationSec: 120,
-    entryFee: 5000000,
+    entryFee: 20000000,
+    repRequired: 80000,
+    prerequisiteChampionship: 'fia_wec',
     repPerRound: 500,
     incomeBonus: 0.50,
     finalBonusMult: 6.0,
@@ -339,4 +351,17 @@ function getCarClassById(id) {
 
 function getChampionshipById(id) {
   return CHAMPIONSHIPS.find(c => c.id === id) || null;
+}
+
+// Returns the prerequisite championship name(s) as a human-readable string, or null.
+function getPrerequisiteLabel(champDef) {
+  if (!champDef.prerequisiteChampionship) return null;
+  const ids = Array.isArray(champDef.prerequisiteChampionship)
+    ? champDef.prerequisiteChampionship
+    : [champDef.prerequisiteChampionship];
+  const names = ids.map(id => {
+    const c = getChampionshipById(id);
+    return c ? c.shortName : id;
+  });
+  return names.length === 1 ? names[0] : names.join(' or ');
 }
