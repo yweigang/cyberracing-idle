@@ -219,31 +219,83 @@ function withdrawFromChampionship(entryId) {
   return { ok: true };
 }
 
+// ─── Driver Stat Generation ───────────────────────────────────────────────────
+
+// Park-Miller LCG — deterministic, seeded PRNG for migration
+function seededRand(seed) {
+  let s = (Math.abs(seed | 0) % 2147483646) || 1;
+  return function() {
+    s = (s * 16807) % 2147483647;
+    return (s - 1) / 2147483646;
+  };
+}
+
+// Distribute a stat budget across the 5 driver stats.
+// randFn: function returning [0,1). Works with Math.random or seededRand output.
+function generateDriverStats(tier, randFn) {
+  const cfg = DRIVER_STAT_CONFIG[tier];
+  const budget = Math.floor(randFn() * (cfg.budgetMax - cfg.budgetMin + 1)) + cfg.budgetMin;
+
+  // Primary stat gets 30–40% of budget
+  const primaryIdx = Math.floor(randFn() * DRIVER_STAT_KEYS.length);
+  const primaryKey = DRIVER_STAT_KEYS[primaryIdx];
+  const primaryRaw = Math.round(budget * (0.30 + randFn() * 0.10));
+  const primaryVal = Math.min(cfg.ceiling, Math.max(cfg.floor, primaryRaw));
+
+  // Distribute remaining across the other four stats using random weights
+  const remaining = budget - primaryVal;
+  const otherKeys = DRIVER_STAT_KEYS.filter(k => k !== primaryKey);
+  const weights   = otherKeys.map(() => randFn() + 0.2); // +0.2 avoids near-zero
+  const wTotal    = weights.reduce((a, b) => a + b, 0);
+
+  const stats = { [primaryKey]: primaryVal };
+  otherKeys.forEach((key, i) => {
+    const raw = Math.round(remaining * weights[i] / wTotal);
+    stats[key] = Math.min(cfg.ceiling, Math.max(cfg.floor, raw));
+  });
+
+  // Rain Skill gets extra ±40% variance after distribution
+  const rainMod = 1 + (randFn() * 0.8 - 0.4);
+  stats.rainSkill = Math.min(cfg.ceiling, Math.max(cfg.floor, Math.round(stats.rainSkill * rainMod)));
+
+  return { stats, primaryStat: primaryKey };
+}
+
 // ─── Driver System ────────────────────────────────────────────────────────────
 
 function scoutDriver(tier) {
   const tierDef = DRIVER_TIERS[tier];
   if (!tierDef) return { ok: false, msg: 'Unknown tier.' };
-  if (tier === 'S' || tier === 'L') return { ok: false, msg: 'Special acquisition only.' };
-
+  if (tierDef.locked) return { ok: false, msg: 'Special acquisition only.' };
   if (G.money < tierDef.scoutCost) return { ok: false, msg: 'Not enough money.' };
+
   G.money -= tierDef.scoutCost;
 
-  const [min, max] = tierDef.paceRange;
-  const pace = Math.floor(Math.random() * (max - min + 1)) + min;
+  const { stats, primaryStat } = generateDriverStats(tier, Math.random);
   const name = DRIVER_NAMES[Math.floor(Math.random() * DRIVER_NAMES.length)];
 
   const driver = {
     id: 'driver_' + G.nextDriverId++,
     name,
     tier,
-    pace,       // % income bonus
-    consistency: Math.floor(Math.random() * 20) + (tier === 'C' ? 5 : tier === 'B' ? 15 : 25),
+    pace:           stats.pace,
+    consistency:    stats.consistency,
+    tyreManagement: stats.tyreManagement,
+    rainSkill:      stats.rainSkill,
+    fitness:        stats.fitness,
+    primaryStat,
     xp: 0,
     carId: null,
   };
   G.drivers.push(driver);
   return { ok: true, driver };
+}
+
+// Returns the pace-based income multiplier for a car (1.0 if no driver).
+function calcDriverPaceMult(car) {
+  if (!car.driverId) return 1.0;
+  const driver = G.drivers.find(d => d.id === car.driverId);
+  return driver ? 1 + driver.pace / 100 : 1.0;
 }
 
 function assignDriver(driverId, carId) {
@@ -276,6 +328,19 @@ function unassignDriver(driverId) {
   }
   driver.carId = null;
   return { ok: true };
+}
+
+function fireDriver(driverId) {
+  const idx = G.drivers.findIndex(d => d.id === driverId);
+  if (idx === -1) return { ok: false, msg: 'Driver not found.' };
+  const driver = G.drivers[idx];
+  if (driver.carId) {
+    const car = G.cars.find(c => c.id === driver.carId);
+    if (car) car.driverId = null;
+  }
+  const name = driver.name;
+  G.drivers.splice(idx, 1);
+  return { ok: true, name };
 }
 
 // ─── Season Reset (Prestige) ─────────────────────────────────────────────────
@@ -462,11 +527,29 @@ function loadGame() {
     const saved = JSON.parse(raw);
     // Merge with defaults to handle new keys added in updates
     G = Object.assign(createDefaultState(), saved);
+    _migrateDriverStats();
     return true;
   } catch (e) {
     console.warn('Load failed:', e);
     return false;
   }
+}
+
+// Regenerate the 5-stat block for drivers saved before the stat budget system.
+// Uses the driver's ID number as a seed so results are deterministic on every load.
+function _migrateDriverStats() {
+  G.drivers.forEach(driver => {
+    if (driver.tyreManagement === undefined) {
+      const seed = parseInt(driver.id.replace('driver_', ''), 10) || 1;
+      const { stats, primaryStat } = generateDriverStats(driver.tier || 'C', seededRand(seed));
+      driver.pace           = stats.pace;
+      driver.consistency    = stats.consistency;
+      driver.tyreManagement = stats.tyreManagement;
+      driver.rainSkill      = stats.rainSkill;
+      driver.fitness        = stats.fitness;
+      driver.primaryStat    = primaryStat;
+    }
+  });
 }
 
 function resetGame() {

@@ -557,16 +557,35 @@ select { font-family: inherit; }
 .scout-card {
   background: var(--bg-2);
   border: 1px solid var(--border);
+  border-top: 2px solid var(--tier-color, var(--border));
   border-radius: var(--radius-lg);
   padding: 14px;
-  min-width: 160px;
+  min-width: 150px;
   display: flex;
   flex-direction: column;
   gap: 6px;
 }
-.scout-tier   { font-weight: 700; font-size: 16px; }
-.scout-rarity { font-size: 11px; color: var(--text-3); }
-.scout-pace   { font-size: 12px; color: var(--text-2); }
+.scout-card.scout-locked {
+  opacity: 0.5;
+  filter: saturate(0.2);
+  cursor: default;
+}
+.scout-tier-label {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+.scout-tier     { font-weight: 700; font-size: 15px; }
+.scout-tier-key { font-family: var(--font-mono); font-size: 18px; font-weight: 700; }
+.scout-rarity   { font-size: 11px; color: var(--text-3); }
+.scout-budget   { font-size: 12px; color: var(--text-2); }
+.scout-locked-msg {
+  font-size: 11px;
+  color: var(--text-3);
+  font-style: italic;
+  margin-top: 2px;
+}
 
 .driver-list { display: flex; flex-direction: column; gap: 10px; }
 
@@ -576,19 +595,77 @@ select { font-family: inherit; }
   border-radius: var(--radius-lg);
   padding: 12px 16px;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 16px;
   flex-wrap: wrap;
 }
-.driver-info { min-width: 140px; }
-.driver-name { font-weight: 600; }
-.driver-tier { font-size: 11px; letter-spacing: 1px; margin-top: 2px; }
-.driver-stats {
+.driver-info    { min-width: 130px; }
+.driver-name    { font-weight: 600; }
+.driver-tier    { font-size: 11px; letter-spacing: 1px; margin-top: 2px; }
+.driver-primary-badge {
+  font-size: 10px;
+  margin-top: 4px;
+  opacity: 0.8;
+}
+
+/* 5-stat grid on driver cards */
+.driver-stats-grid {
   display: flex;
-  gap: 12px;
-  font-size: 12px;
-  color: var(--text-2);
+  gap: 6px;
+  flex-wrap: wrap;
   flex: 1;
+}
+.dstat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  background: var(--bg-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 5px 8px;
+  min-width: 54px;
+  position: relative;
+}
+.dstat-primary {
+  border-color: var(--border-hi);
+  background: var(--bg-4);
+}
+.dstat-pace {
+  border-color: var(--amber);
+  background: #120e00;
+}
+.dstat-pace .dstat-value {
+  font-size: 18px;
+  color: var(--amber);
+}
+.dstat-label {
+  font-size: 9px;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: var(--text-3);
+  white-space: nowrap;
+}
+.dstat-value {
+  font-family: var(--font-mono);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-1);
+}
+.dstat-star {
+  position: absolute;
+  top: 2px;
+  right: 3px;
+  font-size: 8px;
+  color: var(--amber);
+  line-height: 1;
+}
+.dstat-pace .dstat-star { color: var(--amber); }
+
+.driver-meta {
+  font-size: 11px;
+  color: var(--text-3);
+  align-self: flex-end;
+  margin-bottom: 2px;
 }
 .driver-assign select {
   background: var(--bg-3);
@@ -597,6 +674,16 @@ select { font-family: inherit; }
   padding: 5px 8px;
   border-radius: var(--radius);
   font-size: 12px;
+}
+
+/* Garage income breakdown */
+.car-ips-breakdown {
+  font-size: 10px;
+  color: var(--amber);
+  font-family: var(--font-mono);
+  opacity: 0.75;
+  margin-top: 1px;
+  white-space: nowrap;
 }
 
 /* ─── Prestige Panel ─────────────────────────────────────────────────────── */

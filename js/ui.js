@@ -172,6 +172,13 @@ function renderGarage() {
         UPGRADES.reliability.getIncomeMult(car.upgrades.reliability)
       ).toFixed(2);
 
+      // Pace multiplier breakdown for income display
+      const paceMult    = calcDriverPaceMult(car);
+      const baseIps     = driver ? ips / paceMult : ips;
+      const breakdownHtml = driver
+        ? `<div class="car-ips-breakdown" data-live-breakdown="${car.id}">Base $${formatNumber(baseIps)}/s &times; ${paceMult.toFixed(2)} = $${formatNumber(ips)}/s</div>`
+        : '';
+
       carsHtml += `
         <div class="car-card" style="--cls-color: ${cls.color}">
           <div class="car-header">
@@ -181,12 +188,13 @@ function renderGarage() {
             </div>
             <div class="car-stats-right">
               <div class="car-ips" data-live-ips="${car.id}">$${formatNumber(ips)}/s</div>
+              ${breakdownHtml}
               <div class="car-mult">×${totalMult} total</div>
             </div>
           </div>
           <div class="car-meta">
             <span class="meta-pill ${driver ? 'has-driver' : ''}">
-              ${driver ? '🏎 ' + driver.name + ' (Pace +' + driver.pace + '%)' : '⚡ No Driver'}
+              ${driver ? '🏎 ' + driver.name + ' (Pace ' + driver.pace + ')' : '⚡ No Driver'}
             </span>
             <span class="meta-pill ${activeChamp ? 'in-champ' : ''}">
               ${activeChamp ? '🏁 ' + champDef.shortName + ' R' + activeChamp.currentRound + '/' + activeChamp.maxRounds : '◯ No Championship'}
@@ -364,20 +372,32 @@ function renderChampionships() {
 function renderDrivers() {
   const container = document.getElementById('panel-drivers');
 
-  // Scout section
+  // Scout section — C/B/A/S purchasable; L locked
   let scoutHtml = '<div class="section-header">SCOUT DRIVERS</div><div class="scout-grid">';
-  ['C', 'B', 'A'].forEach(tier => {
+  ['C', 'B', 'A', 'S', 'L'].forEach(tier => {
     const def = DRIVER_TIERS[tier];
-    const canAfford = G.money >= def.scoutCost;
+    const cfg = DRIVER_STAT_CONFIG[tier];
+    const isLocked = def.locked;
+    const canAfford = !isLocked && G.money >= def.scoutCost;
+
+    const budgetLabel = `Budget: ${cfg.budgetMin}–${cfg.budgetMax} pts`;
+    const lockTooltip = isLocked ? 'title="Unlocked via Prestige milestones"' : '';
+
     scoutHtml += `
-      <div class="scout-card" style="--tier-color: ${def.color}">
-        <div class="scout-tier" style="color: ${def.color}">${def.name}</div>
-        <div class="scout-rarity">${def.rarity}</div>
-        <div class="scout-pace">Pace: +${def.paceRange[0]}–${def.paceRange[1]}%</div>
-        <button class="btn scout-btn ${canAfford ? '' : 'disabled'}"
-          data-tier="${tier}" ${canAfford ? '' : 'disabled'}>
-          ${def.scoutCost === 0 ? 'Free Scout' : '$' + formatNumber(def.scoutCost)}
-        </button>
+      <div class="scout-card ${isLocked ? 'scout-locked' : ''}" style="--tier-color: ${def.color}" ${lockTooltip}>
+        <div class="scout-tier-label">
+          <span class="scout-tier" style="color: ${isLocked ? '#555' : def.color}">${def.name}</span>
+          <span class="scout-tier-key" style="color: ${isLocked ? '#444' : def.color}">${tier}</span>
+        </div>
+        <div class="scout-rarity" style="color: ${isLocked ? '#444' : ''}">${def.rarity}</div>
+        <div class="scout-budget" style="color: ${isLocked ? '#333' : ''}">${budgetLabel}</div>
+        ${isLocked
+          ? `<div class="scout-locked-msg">Unlocked via Prestige</div>`
+          : `<button class="btn scout-btn ${canAfford ? '' : 'disabled'}"
+               data-tier="${tier}" ${canAfford ? '' : 'disabled'}>
+               ${def.scoutCost === 0 ? 'Free Scout' : '$' + formatNumber(def.scoutCost)}
+             </button>`
+        }
       </div>`;
   });
   scoutHtml += '</div>';
@@ -390,27 +410,39 @@ function renderDrivers() {
     rosterHtml += '<div class="driver-list">';
     G.drivers.forEach(driver => {
       const tierDef = DRIVER_TIERS[driver.tier];
-      const assignedCar = driver.carId ? G.cars.find(c => c.id === driver.carId) : null;
+
+      // Build 5-stat block
+      const statsHtml = DRIVER_STAT_KEYS.map(key => {
+        const isPrimary = driver.primaryStat === key;
+        const isPace    = key === 'pace';
+        return `
+          <div class="dstat ${isPrimary ? 'dstat-primary' : ''} ${isPace ? 'dstat-pace' : ''}">
+            <span class="dstat-label">${isPace ? 'Pace' : DRIVER_STAT_LABELS[key].replace(' ', '\u00a0')}</span>
+            <span class="dstat-value">${driver[key] ?? '–'}</span>
+            ${isPrimary ? '<span class="dstat-star">★</span>' : ''}
+          </div>`;
+      }).join('');
+
+      const primaryLabel = DRIVER_STAT_LABELS[driver.primaryStat] || driver.primaryStat;
 
       rosterHtml += `
         <div class="driver-card">
           <div class="driver-info">
             <div class="driver-name">${driver.name}</div>
             <div class="driver-tier" style="color: ${tierDef.color}">${tierDef.name}</div>
+            <div class="driver-primary-badge" style="color: ${tierDef.color}">★ ${primaryLabel}</div>
           </div>
-          <div class="driver-stats">
-            <span>Pace +${driver.pace}%</span>
-            <span>Consistency ${driver.consistency}</span>
-            <span>XP ${Math.floor(driver.xp)}</span>
+          <div class="driver-stats-grid">${statsHtml}</div>
+          <div class="driver-meta">
+            <span class="driver-xp">XP ${Math.floor(driver.xp)}</span>
           </div>
           <div class="driver-assign">
             <select class="assign-car-select" data-driver="${driver.id}">
               <option value="">Unassigned</option>
-              ${G.cars.map(c => `<option value="${c.id}" ${driver.carId === c.id ? 'selected' : ''}>
-                ${c.name}
-              </option>`).join('')}
+              ${G.cars.map(c => `<option value="${c.id}" ${driver.carId === c.id ? 'selected' : ''}>${c.name}</option>`).join('')}
             </select>
           </div>
+          <button class="btn btn-danger fire-driver-btn" data-driver="${driver.id}" title="Release driver">✕</button>
         </div>`;
     });
     rosterHtml += '</div>';
@@ -422,7 +454,7 @@ function renderDrivers() {
     btn.addEventListener('click', () => {
       const result = scoutDriver(btn.dataset.tier);
       if (result.ok) {
-        addNotification(`Signed ${result.driver.name} (${result.driver.tier}-tier, Pace +${result.driver.pace}%)`, 'success');
+        addNotification(`Signed ${result.driver.name} (${result.driver.tier}-tier, Pace ${result.driver.pace})`, 'success');
         renderDrivers();
       } else {
         addNotification(result.msg, 'error');
@@ -442,6 +474,16 @@ function renderDrivers() {
         addNotification('Driver unassigned.', 'info');
       }
       renderDrivers();
+    });
+  });
+
+  container.querySelectorAll('.fire-driver-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const result = fireDriver(btn.dataset.driver);
+      if (result.ok) {
+        addNotification(`${result.name} released.`, 'info');
+        renderDrivers();
+      }
     });
   });
 }
@@ -475,6 +517,13 @@ function updateGarageLive() {
     const ips = calcCarIncomePerSec(car);
     const ipsEl = document.querySelector(`[data-live-ips="${car.id}"]`);
     if (ipsEl) ipsEl.textContent = '$' + formatNumber(ips) + '/s';
+
+    const breakdownEl = document.querySelector(`[data-live-breakdown="${car.id}"]`);
+    if (breakdownEl) {
+      const paceMult = calcDriverPaceMult(car);
+      const baseIps  = ips / paceMult;
+      breakdownEl.textContent = `Base $${formatNumber(baseIps)}/s \u00d7 ${paceMult.toFixed(2)} = $${formatNumber(ips)}/s`;
+    }
 
     UPGRADE_ORDER.forEach(upgId => {
       const btn = document.querySelector(`.upg-btn[data-car="${car.id}"][data-upg="${upgId}"]`);

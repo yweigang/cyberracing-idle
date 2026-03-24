@@ -261,11 +261,29 @@ const CHAMPIONSHIPS = [
 // ─── Drivers ──────────────────────────────────────────────────────────────────
 
 const DRIVER_TIERS = {
-  C: { name: 'Club Racer', rarity: 'Common',    scoutCost: 0,      paceRange: [5, 10],  color: '#888' },
-  B: { name: 'Gentleman',  rarity: 'Uncommon',  scoutCost: 10000,  paceRange: [12, 20], color: '#44aa44' },
-  A: { name: 'Pro Driver', rarity: 'Rare',      scoutCost: 75000,  paceRange: [22, 35], color: '#4488ff' },
-  S: { name: 'Factory',    rarity: 'Epic',      scoutCost: 0,      paceRange: [38, 55], color: '#aa44ff' }, // PP only
-  L: { name: 'Legend',     rarity: 'Legendary', scoutCost: 0,      paceRange: [60, 80], color: '#ffaa00' }, // special only
+  C: { name: 'Club Racer',     rarity: 'Common',    scoutCost: 0,       color: '#888',    locked: false },
+  B: { name: 'Gentleman',      rarity: 'Uncommon',  scoutCost: 10000,   color: '#44aa44', locked: false },
+  A: { name: 'Pro Driver',     rarity: 'Rare',      scoutCost: 75000,   color: '#4488ff', locked: false },
+  S: { name: 'Factory Driver', rarity: 'Epic',      scoutCost: 500000,  color: '#aa44ff', locked: false },
+  L: { name: 'Legend',         rarity: 'Legendary', scoutCost: 0,       color: '#ffaa00', locked: true  },
+};
+
+// Budget, floor, and ceiling per driver tier
+const DRIVER_STAT_CONFIG = {
+  C: { budgetMin: 50,  budgetMax: 70,  floor: 5,  ceiling: 25  },
+  B: { budgetMin: 80,  budgetMax: 110, floor: 8,  ceiling: 38  },
+  A: { budgetMin: 130, budgetMax: 160, floor: 15, ceiling: 60  },
+  S: { budgetMin: 180, budgetMax: 220, floor: 25, ceiling: 80  },
+  L: { budgetMin: 260, budgetMax: 300, floor: 40, ceiling: 100 },
+};
+
+const DRIVER_STAT_KEYS = ['pace', 'consistency', 'tyreManagement', 'rainSkill', 'fitness'];
+const DRIVER_STAT_LABELS = {
+  pace:           'Pace',
+  consistency:    'Consistency',
+  tyreManagement: 'Tyre Mgmt',
+  rainSkill:      'Rain Skill',
+  fitness:        'Fitness',
 };
 
 const DRIVER_NAMES = [
