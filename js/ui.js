@@ -57,28 +57,64 @@ function renderNotifications() {
 function renderGarage() {
   const container = document.getElementById('panel-garage');
 
+  // ── Garage upgrade section
+  const totalSlots  = getGarageSlots(G.garageLevel);
+  const usedSlots   = G.cars.length;
+  const nextUpgrade = getGarageNextUpgrade(G.garageLevel);
+  const isMaxed     = G.garageLevel >= GARAGE_MAX_LEVEL;
+  const canUpgrade  = !isMaxed &&
+                      G.money >= nextUpgrade.cost &&
+                      G.reputation >= nextUpgrade.repRequired;
+
+  let garageHtml = `
+    <div class="section-header">GARAGE</div>
+    <div class="garage-upgrade-bar">
+      <div class="garage-slots-display">
+        <span class="garage-label">Slots</span>
+        <span class="garage-used" id="garage-slots-used">${usedSlots} / ${totalSlots}</span>
+        <div class="garage-slot-pips">${
+          Array.from({ length: totalSlots }, (_, i) =>
+            `<div class="slot-pip ${i < usedSlots ? 'used' : ''}"></div>`
+          ).join('')
+        }</div>
+      </div>
+      ${isMaxed
+        ? `<div class="garage-maxed">Max garage level reached (${totalSlots} slots)</div>`
+        : `<div class="garage-next-info">
+            <span>Level ${G.garageLevel + 1} → ${nextUpgrade.slots} slots</span>
+            ${nextUpgrade.repRequired > 0 ? `<span class="garage-rep-req ${G.reputation >= nextUpgrade.repRequired ? '' : 'unmet'}">${formatNumber(nextUpgrade.repRequired)} REP</span>` : ''}
+           </div>
+           <button class="btn garage-upgrade-btn ${canUpgrade ? '' : 'disabled'}" id="garage-upgrade-btn" ${canUpgrade ? '' : 'disabled'}>
+             Expand — $${formatNumber(nextUpgrade.cost)}
+           </button>`
+      }
+    </div>`;
+
   // ── Buy car section
   let buyCarsHtml = '<div class="section-header">BUY CAR</div><div class="buy-cars-grid">';
   CAR_CLASSES.forEach(cls => {
-    const owned = G.cars.filter(c => c.classId === cls.id).length;
-    const repOk = G.reputation >= cls.repRequired;
-    const ppOk = cls.ppRequired === 0 || G.prestigePoints >= cls.ppRequired;
-    const moneyOk = G.money >= cls.baseCost;
-    const slotOk = owned < cls.maxOwned;
-    const canBuy = repOk && ppOk && moneyOk && slotOk;
-    const locked = !repOk || !ppOk;
+    const owned      = G.cars.filter(c => c.classId === cls.id).length;
+    const repOk      = G.reputation >= cls.repRequired;
+    const ppOk       = cls.ppRequired === 0 || G.prestigePoints >= cls.ppRequired;
+    const moneyOk    = G.money >= cls.baseCost;
+    const classSlotOk  = owned < cls.maxOwned;
+    const garageSlotOk = usedSlots < totalSlots;
+    const canBuy     = repOk && ppOk && moneyOk && classSlotOk && garageSlotOk;
+    const locked     = !repOk || !ppOk;
 
     let lockMsg = '';
-    if (!repOk) lockMsg = `Requires ${formatNumber(cls.repRequired)} REP`;
-    else if (!ppOk) lockMsg = `Requires ${cls.ppRequired} PP`;
+    if (!repOk)          lockMsg = `Requires ${formatNumber(cls.repRequired)} REP`;
+    else if (!ppOk)      lockMsg = `Requires ${cls.ppRequired} PP`;
+    else if (!garageSlotOk) lockMsg = 'Expand your garage';
+    else if (!classSlotOk)  lockMsg = `Max ${cls.maxOwned} owned`;
 
     buyCarsHtml += `
       <div class="buy-car-card ${locked ? 'locked' : ''}" style="--cls-color: ${cls.color}">
         <div class="cls-tier">Tier ${cls.tier}</div>
         <div class="cls-name" style="color: ${cls.color}">${cls.name}</div>
         <div class="cls-income">$${formatNumber(cls.baseIncomePerLap / cls.lapTimeSec)}/s base</div>
-        <div class="cls-owned">${owned}/${cls.maxOwned} owned</div>
-        ${locked ? `<div class="cls-lock">${lockMsg}</div>` : ''}
+        <div class="cls-owned" data-live-owned="${cls.id}">${owned}/${cls.maxOwned}</div>
+        ${lockMsg ? `<div class="cls-lock">${lockMsg}</div>` : ''}
         <button class="btn buy-car-btn ${canBuy ? '' : 'disabled'}"
           data-class="${cls.id}" ${canBuy ? '' : 'disabled'}>
           $${formatNumber(cls.baseCost)}
@@ -162,9 +198,20 @@ function renderGarage() {
   }
   carsHtml += '</div>';
 
-  container.innerHTML = buyCarsHtml + carsHtml;
+  container.innerHTML = garageHtml + buyCarsHtml + carsHtml;
 
-  // Bind events
+  // Garage upgrade button
+  const garageBtn = container.querySelector('#garage-upgrade-btn');
+  if (garageBtn) {
+    garageBtn.addEventListener('click', () => {
+      const result = upgradeGarage();
+      if (result.ok) addNotification(`Garage expanded to ${result.slots} slots!`, 'success');
+      else addNotification(result.msg, 'error');
+      renderGarage();
+    });
+  }
+
+  // Buy car buttons
   container.querySelectorAll('.buy-car-btn:not([disabled])').forEach(btn => {
     btn.addEventListener('click', () => {
       const result = buyCar(btn.dataset.class);
@@ -172,6 +219,8 @@ function renderGarage() {
       renderGarage();
     });
   });
+
+  // Upgrade buttons
   container.querySelectorAll('.upg-btn:not([disabled])').forEach(btn => {
     btn.addEventListener('click', () => {
       const result = buyUpgrade(btn.dataset.car, btn.dataset.upg);
@@ -508,15 +557,32 @@ function updateGarageLive() {
     });
   });
 
+  // Garage upgrade button affordability
+  const totalSlots  = getGarageSlots(G.garageLevel);
+  const usedSlots   = G.cars.length;
+  const nextUpgrade = getGarageNextUpgrade(G.garageLevel);
+
+  const slotsUsedEl = document.getElementById('garage-slots-used');
+  if (slotsUsedEl) slotsUsedEl.textContent = `${usedSlots} / ${totalSlots}`;
+
+  const garageBtn = document.getElementById('garage-upgrade-btn');
+  if (garageBtn && nextUpgrade) {
+    const canUpgrade = G.money >= nextUpgrade.cost && G.reputation >= nextUpgrade.repRequired;
+    garageBtn.disabled = !canUpgrade;
+    garageBtn.classList.toggle('disabled', !canUpgrade);
+  }
+
   // Buy-car button affordability
   document.querySelectorAll('.buy-car-btn').forEach(btn => {
     const cls = getCarClassById(btn.dataset.class);
     if (!cls) return;
-    const owned = G.cars.filter(c => c.classId === cls.id).length;
+    const owned        = G.cars.filter(c => c.classId === cls.id).length;
+    const garageSlotOk = usedSlots < totalSlots;
     const canBuy = G.reputation >= cls.repRequired &&
                    (!cls.ppRequired || G.prestigePoints >= cls.ppRequired) &&
                    G.money >= cls.baseCost &&
-                   owned < cls.maxOwned;
+                   owned < cls.maxOwned &&
+                   garageSlotOk;
     btn.disabled = !canBuy;
     btn.classList.toggle('disabled', !canBuy);
   });

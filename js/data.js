@@ -34,9 +34,9 @@ const CAR_CLASSES = [
     upgradeTree: 'standard',
   },
   {
-    id: 'GTE',
-    name: 'GTE/GT3 Pro',
-    fullName: 'GTE/GT3 Pro — Pro-Am',
+    id: 'LMP3',
+    name: 'LMP3',
+    fullName: 'LMP3 — Pro-Am',
     tier: 3,
     repRequired: 2500,
     ppRequired: 0,
@@ -45,7 +45,7 @@ const CAR_CLASSES = [
     lapTimeSec: 7,
     maxOwned: 3,
     color: '#00d4ff',
-    description: 'WEC GTE and IMSA GTD Pro. Professional-grade motorsport.',
+    description: 'Entry-level prototype racing in ELMS and Asian Le Mans. A big step up from GT.',
     upgradeTree: 'standard',
   },
   {
@@ -192,7 +192,7 @@ const CHAMPIONSHIPS = [
     id: 'imsa_weathertech',
     name: 'IMSA WeatherTech',
     shortName: 'IMSA',
-    allowedClasses: ['GT3', 'GTE', 'LMP2'],
+    allowedClasses: ['GT3', 'LMP3', 'LMP2'],
     rounds: 12,
     roundDurationSec: 120,
     entryFee: 80000,
@@ -220,7 +220,7 @@ const CHAMPIONSHIPS = [
     id: 'fia_wec',
     name: 'FIA World Endurance Championship',
     shortName: 'FIA WEC',
-    allowedClasses: ['GTE', 'LMP2', 'HYPERCAR'],
+    allowedClasses: ['LMP3', 'LMP2', 'HYPERCAR'],
     rounds: 8,
     roundDurationSec: 180,
     entryFee: 500000,
@@ -303,6 +303,28 @@ const PRESTIGE_ITEMS = [
     repeatable: true,
   },
 ];
+
+// ─── Garage Upgrades ──────────────────────────────────────────────────────────
+
+const GARAGE_UPGRADES = [
+  { level: 1, slots: 1, cost: 0,          repRequired: 0 },
+  { level: 2, slots: 2, cost: 50000,      repRequired: 0 },
+  { level: 3, slots: 3, cost: 200000,     repRequired: 500 },
+  { level: 4, slots: 4, cost: 750000,     repRequired: 2500 },
+  { level: 5, slots: 6, cost: 3000000,    repRequired: 8000 },
+  { level: 6, slots: 8, cost: 15000000,   repRequired: 25000 },
+];
+
+const GARAGE_MAX_LEVEL = GARAGE_UPGRADES.length;
+
+function getGarageSlots(level) {
+  const entry = GARAGE_UPGRADES.find(g => g.level === level);
+  return entry ? entry.slots : 1;
+}
+
+function getGarageNextUpgrade(currentLevel) {
+  return GARAGE_UPGRADES.find(g => g.level === currentLevel + 1) || null;
+}
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 

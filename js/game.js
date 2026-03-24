@@ -18,6 +18,7 @@ function createDefaultState() {
     prestigePoints: 0,
     season: 1,
     totalEarned: 0,
+    garageLevel: 1,
     nextCarId: 2,
     nextDriverId: 1,
     cars: [
@@ -112,11 +113,14 @@ function buyUpgrade(carId, upgradeId) {
 function buyCar(classId) {
   const cls = getCarClassById(classId);
   if (!cls) return { ok: false, msg: 'Unknown car class.' };
-  if (G.reputation < cls.repRequired) return { ok: false, msg: `Need ${cls.repRequired} REP.` };
+  if (G.reputation < cls.repRequired) return { ok: false, msg: `Need ${formatNumber(cls.repRequired)} REP.` };
   if (cls.ppRequired && G.prestigePoints < cls.ppRequired) return { ok: false, msg: `Need ${cls.ppRequired} PP.` };
 
+  const totalSlots = getGarageSlots(G.garageLevel);
+  if (G.cars.length >= totalSlots) return { ok: false, msg: 'Expand your garage to buy more cars.' };
+
   const ownedOfClass = G.cars.filter(c => c.classId === classId).length;
-  if (ownedOfClass >= cls.maxOwned) return { ok: false, msg: `Max ${cls.maxOwned} cars of this class.` };
+  if (ownedOfClass >= cls.maxOwned) return { ok: false, msg: `Max ${cls.maxOwned} ${cls.name} cars owned.` };
 
   if (G.money < cls.baseCost) return { ok: false, msg: 'Not enough money.' };
 
@@ -132,6 +136,18 @@ function buyCar(classId) {
     championshipId: null,
   });
   return { ok: true, carId: id };
+}
+
+// ─── Garage Upgrade ───────────────────────────────────────────────────────────
+
+function upgradeGarage() {
+  const next = getGarageNextUpgrade(G.garageLevel);
+  if (!next) return { ok: false, msg: 'Garage is already at maximum capacity.' };
+  if (G.reputation < next.repRequired) return { ok: false, msg: `Need ${formatNumber(next.repRequired)} REP.` };
+  if (G.money < next.cost) return { ok: false, msg: 'Not enough money.' };
+  G.money -= next.cost;
+  G.garageLevel = next.level;
+  return { ok: true, level: next.level, slots: next.slots };
 }
 
 // ─── Championships ────────────────────────────────────────────────────────────
