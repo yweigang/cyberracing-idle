@@ -6,6 +6,8 @@ let _activeTab = 'garage';
 let _uiInterval = null;
 let _lastNotifCount = 0;
 let _selectedCarForChamp = null;
+let _signingSlotIndex = null;  // 0–4 or null
+let _sponsorOptions = [];      // array of 3 generated sponsor objects
 
 // ─── Tab Navigation ───────────────────────────────────────────────────────────
 
@@ -25,6 +27,7 @@ function renderActivePanel() {
     case 'garage':        renderGarage(); break;
     case 'championships': renderChampionships(); break;
     case 'drivers':       renderDrivers(); break;
+    case 'sponsors':      renderSponsors(); break;
     case 'prestige':      renderPrestige(); break;
   }
 }
@@ -130,7 +133,6 @@ function renderGarage() {
   } else {
     G.cars.forEach(car => {
       const cls = getCarClassById(car.classId);
-      const ips = calcCarIncomePerSec(car);
       const driver = car.driverId ? G.drivers.find(d => d.id === car.driverId) : null;
       const activeChamp = car.championshipId
         ? G.activeChampionships.find(c => c.id === car.championshipId) : null;
@@ -163,7 +165,7 @@ function renderGarage() {
           </div>`;
       });
 
-      // Mult breakdown
+      // Upgrade multiplier total
       const totalMult = (
         UPGRADES.engine.getIncomeMult(car.upgrades.engine) *
         UPGRADES.aero.getIncomeMult(car.upgrades.aero) *
@@ -172,12 +174,7 @@ function renderGarage() {
         UPGRADES.reliability.getIncomeMult(car.upgrades.reliability)
       ).toFixed(2);
 
-      // Pace multiplier breakdown for income display
-      const paceMult    = calcDriverPaceMult(car);
-      const baseIps     = driver ? ips / paceMult : ips;
-      const breakdownHtml = driver
-        ? `<div class="car-ips-breakdown" data-live-breakdown="${car.id}">Base $${formatNumber(baseIps)}/s &times; ${paceMult.toFixed(2)} = $${formatNumber(ips)}/s</div>`
-        : '';
+      const paceMult = calcDriverPaceMult(car);
 
       carsHtml += `
         <div class="car-card" style="--cls-color: ${cls.color}">
@@ -187,9 +184,7 @@ function renderGarage() {
               <div class="car-class" style="color: ${cls.color}">${cls.fullName}</div>
             </div>
             <div class="car-stats-right">
-              <div class="car-ips" data-live-ips="${car.id}">$${formatNumber(ips)}/s</div>
-              ${breakdownHtml}
-              <div class="car-mult">×${totalMult} total</div>
+              <div class="car-mult">×${totalMult} upgrades · ×${paceMult.toFixed(2)} pace</div>
             </div>
           </div>
           <div class="car-meta">
@@ -488,6 +483,241 @@ function renderDrivers() {
   });
 }
 
+// ─── Sponsors Panel ───────────────────────────────────────────────────────────
+
+function renderSponsors() {
+  const container = document.getElementById('panel-sponsors');
+  const totalIps      = calcSponsorIncomePerSec();
+  const slotsUnlocked = getSponsorSlotsUnlocked();
+
+  // ── Overview bar
+  let html = `
+    <div class="section-header">SPONSORS</div>
+    <div class="sponsor-overview-bar">
+      <div class="sponsor-overview-stat">
+        <span class="sponsor-overview-label">Total Sponsor Income</span>
+        <span class="sponsor-overview-ips" id="sponsor-total-ips">$${formatNumber(totalIps)}/s</span>
+      </div>
+      <div class="sponsor-overview-stat">
+        <span class="sponsor-overview-label">Season</span>
+        <span class="sponsor-overview-value">${G.season}</span>
+      </div>
+      <div class="sponsor-overview-stat">
+        <span class="sponsor-overview-label">Slots</span>
+        <span class="sponsor-overview-value">${G.sponsors.filter(Boolean).length} / ${slotsUnlocked}</span>
+      </div>
+    </div>`;
+
+  // ── Starter (parents) sponsor
+  html += `
+    <div class="section-header">FAMILY SUPPORT</div>
+    <div class="sponsor-card sponsor-starter">
+      <div class="sponsor-card-header">
+        <span class="sponsor-cat-icon starter-icon">🏠</span>
+        <div class="sponsor-info">
+          <div class="sponsor-name">Mum &amp; Dad Racing Support</div>
+          <div class="sponsor-meta sponsor-meta-starter">Family Support · Permanent</div>
+        </div>
+        <div class="sponsor-ips-col">
+          <div class="sponsor-ips-value">$8/s</div>
+        </div>
+      </div>
+      <div class="sponsor-card-footer">
+        <span class="sponsor-target-badge met">✓ No conditions — always supporting you</span>
+        <span class="sponsor-contract-badge">Lifetime contract</span>
+      </div>
+    </div>`;
+
+  // ── Earnable slots
+  html += `<div class="section-header">SPONSOR SLOTS</div><div class="sponsor-slots-list">`;
+
+  for (let i = 0; i < 5; i++) {
+    const slotNum    = i + 1;
+    const unlockDef  = SPONSOR_SLOT_UNLOCKS[i];
+    const isUnlocked = slotNum <= slotsUnlocked;
+    const sponsor    = G.sponsors[i];
+    const isSigningThis = _signingSlotIndex === i;
+
+    if (!isUnlocked) {
+      const cond = unlockDef.condition;
+      const lockLabel = cond
+        ? (cond.type === 'rep'
+            ? `${formatNumber(cond.amount)} REP`
+            : unlockDef.label)
+        : 'Locked';
+      html += `
+        <div class="sponsor-slot sponsor-slot-locked">
+          <span class="slot-num">Slot ${slotNum}</span>
+          <span class="slot-lock-icon">🔒</span>
+          <span class="slot-lock-label">Unlock: ${lockLabel}</span>
+        </div>`;
+
+    } else if (!sponsor) {
+      html += `
+        <div class="sponsor-slot sponsor-slot-empty${isSigningThis ? ' signing-active' : ''}">
+          <span class="slot-num">Slot ${slotNum}</span>
+          <span class="slot-empty-label">No sponsor — slot available</span>
+          <button class="btn sign-sponsor-btn${isSigningThis ? ' disabled' : ''}"
+            data-slot="${i}" ${isSigningThis ? 'disabled' : ''}>
+            ${isSigningThis ? 'Selecting...' : 'Sign Sponsor'}
+          </button>
+        </div>`;
+
+    } else {
+      const catDef    = SPONSOR_CATEGORIES.find(c => c.id === sponsor.category);
+      const tierDef   = SPONSOR_TIERS[sponsor.tier];
+      const targetMet = isSponsorTargetMet(sponsor);
+      const targetLbl = SPONSOR_TARGET_LABELS[sponsor.target] || '';
+      const contractLbl = sponsor.seasonsRemaining !== null
+        ? `${sponsor.seasonsRemaining} season${sponsor.seasonsRemaining !== 1 ? 's' : ''} remaining`
+        : 'Ongoing contract';
+
+      let bonusParts = [];
+      if (sponsor.bonusCash > 0) bonusParts.push(`$${formatNumber(sponsor.bonusCash)}`);
+      if (sponsor.bonusRep > 0)  bonusParts.push(`+${formatNumber(sponsor.bonusRep)} REP`);
+      if (sponsor.bonusPP > 0)   bonusParts.push(`+${sponsor.bonusPP} PP`);
+      if (sponsor.unlocksLivery) bonusParts.push('Exclusive Livery');
+
+      html += `
+        <div class="sponsor-slot sponsor-slot-filled" style="--sp-color: ${tierDef.color}">
+          <div class="sponsor-card-inner">
+            <div class="sponsor-card-header">
+              <span class="sponsor-cat-icon">${catDef ? catDef.icon : '◆'}</span>
+              <div class="sponsor-info">
+                <div class="sponsor-name">${sponsor.name}</div>
+                <div class="sponsor-meta" style="color: ${tierDef.color}">${catDef ? catDef.name : ''} · ${tierDef.label}</div>
+              </div>
+              <div class="sponsor-ips-col">
+                <div class="sponsor-ips-value" data-live-sponsor-ips="${sponsor.id}">$${formatNumber(sponsor.incomePerSec)}/s</div>
+              </div>
+            </div>
+            <div class="sponsor-details">
+              <span class="sponsor-contract-badge">📅 ${contractLbl}</span>
+              <span class="sponsor-target-badge ${targetMet ? 'met' : 'unmet'}" data-live-target="${sponsor.id}">
+                ${targetMet ? '✓' : '✗'} ${targetLbl}
+              </span>
+              ${bonusParts.length ? `<span class="sponsor-bonus-badge">🏆 Season bonus: ${bonusParts.join(' + ')}</span>` : ''}
+            </div>
+          </div>
+          <button class="btn btn-danger terminate-sponsor-btn" data-id="${sponsor.id}" title="Terminate contract">✕</button>
+        </div>`;
+    }
+  }
+  html += `</div>`; // end sponsor-slots-list
+
+  // ── Sign sponsor panel
+  if (_signingSlotIndex !== null && _sponsorOptions.length > 0) {
+    html += `
+      <div class="section-header">CHOOSE SPONSOR — Slot ${_signingSlotIndex + 1}</div>
+      <div class="sponsor-options-grid">`;
+
+    _sponsorOptions.forEach((opt, idx) => {
+      const catDef  = SPONSOR_CATEGORIES.find(c => c.id === opt.category);
+      const tierDef = SPONSOR_TIERS[opt.tier];
+      const contractLbl = opt.seasonsRemaining !== null
+        ? `${opt.seasonsRemaining} season${opt.seasonsRemaining !== 1 ? 's' : ''}`
+        : 'Ongoing';
+      const targetLbl = SPONSOR_TARGET_LABELS[opt.target] || '';
+
+      let bonusParts = [];
+      if (opt.bonusCash > 0) bonusParts.push(`$${formatNumber(opt.bonusCash)}`);
+      if (opt.bonusRep > 0)  bonusParts.push(`+${formatNumber(opt.bonusRep)} REP`);
+      if (opt.bonusPP > 0)   bonusParts.push(`+${opt.bonusPP} PP`);
+      if (opt.unlocksLivery) bonusParts.push('Livery');
+
+      html += `
+        <div class="sponsor-option-card" style="--sp-color: ${tierDef.color}">
+          <div class="opt-tier-label" style="color: ${tierDef.color}">${tierDef.label}</div>
+          <div class="opt-header">
+            <span class="opt-cat-icon">${catDef ? catDef.icon : '◆'}</span>
+            <div class="opt-name-block">
+              <div class="opt-name">${opt.name}</div>
+              <div class="opt-cat" style="color: ${tierDef.color}">${catDef ? catDef.name : ''}</div>
+            </div>
+          </div>
+          <div class="opt-ips">$${formatNumber(opt.incomePerSec)}/s</div>
+          <div class="opt-details">
+            <span>📅 ${contractLbl}</span>
+            <span>🎯 ${targetLbl}</span>
+            ${bonusParts.length ? `<span>🏆 ${bonusParts.join(' + ')}</span>` : ''}
+          </div>
+          <button class="btn choose-sponsor-btn" data-idx="${idx}">Sign Deal</button>
+        </div>`;
+    });
+
+    html += `</div>
+      <button class="btn cancel-sign-btn" style="margin-top:12px">Cancel</button>`;
+  }
+
+  container.innerHTML = html;
+
+  // Events — sign slot
+  container.querySelectorAll('.sign-sponsor-btn:not([disabled])').forEach(btn => {
+    btn.addEventListener('click', () => {
+      _signingSlotIndex = parseInt(btn.dataset.slot);
+      _sponsorOptions = generateSponsorOptions();
+      renderSponsors();
+    });
+  });
+
+  // Events — choose deal
+  container.querySelectorAll('.choose-sponsor-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const opt = _sponsorOptions[parseInt(btn.dataset.idx)];
+      const result = signSponsor(_signingSlotIndex, opt);
+      if (result.ok) {
+        _signingSlotIndex = null;
+        _sponsorOptions = [];
+      } else {
+        addNotification(result.msg, 'error');
+      }
+      renderSponsors();
+    });
+  });
+
+  // Events — cancel sign
+  const cancelBtn = container.querySelector('.cancel-sign-btn');
+  if (cancelBtn) {
+    cancelBtn.addEventListener('click', () => {
+      _signingSlotIndex = null;
+      _sponsorOptions = [];
+      renderSponsors();
+    });
+  }
+
+  // Events — terminate
+  container.querySelectorAll('.terminate-sponsor-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const result = terminateSponsor(btn.dataset.id);
+      if (!result.ok) addNotification(result.msg, 'error');
+      renderSponsors();
+    });
+  });
+}
+
+// ─── Targeted in-place sponsor updates ───────────────────────────────────────
+
+function updateSponsorsLive() {
+  if (_activeTab !== 'sponsors') return;
+
+  const totalEl = document.getElementById('sponsor-total-ips');
+  if (totalEl) totalEl.textContent = '$' + formatNumber(calcSponsorIncomePerSec()) + '/s';
+
+  G.sponsors.forEach(s => {
+    if (!s) return;
+    const ipsEl = document.querySelector(`[data-live-sponsor-ips="${s.id}"]`);
+    if (ipsEl) ipsEl.textContent = '$' + formatNumber(s.incomePerSec) + '/s';
+
+    const targetEl = document.querySelector(`[data-live-target="${s.id}"]`);
+    if (targetEl) {
+      const met = isSponsorTargetMet(s);
+      const lbl = SPONSOR_TARGET_LABELS[s.target] || '';
+      targetEl.textContent = (met ? '✓ ' : '✗ ') + lbl;
+      targetEl.className = 'sponsor-target-badge ' + (met ? 'met' : 'unmet');
+    }
+  });
+}
+
 // ─── Prestige Panel ───────────────────────────────────────────────────────────
 
 function renderPrestige() {
@@ -502,10 +732,15 @@ function renderPrestige() {
 // ─── Fast UI Refresh (HUD only — no DOM reconstruction) ─────────────────────
 
 function fastRefresh() {
-  updateCurrencyBar();
-  renderNotifications();
-  updateGarageLive();
-  updateChampLive();
+  try {
+    updateCurrencyBar();
+    renderNotifications();
+    updateGarageLive();
+    updateChampLive();
+    updateSponsorsLive();
+  } catch (e) {
+    console.error('[fastRefresh] error:', e);
+  }
 }
 
 // ─── Targeted in-place garage updates ────────────────────────────────────────
@@ -514,17 +749,6 @@ function updateGarageLive() {
   if (_activeTab !== 'garage') return;
 
   G.cars.forEach(car => {
-    const ips = calcCarIncomePerSec(car);
-    const ipsEl = document.querySelector(`[data-live-ips="${car.id}"]`);
-    if (ipsEl) ipsEl.textContent = '$' + formatNumber(ips) + '/s';
-
-    const breakdownEl = document.querySelector(`[data-live-breakdown="${car.id}"]`);
-    if (breakdownEl) {
-      const paceMult = calcDriverPaceMult(car);
-      const baseIps  = ips / paceMult;
-      breakdownEl.textContent = `Base $${formatNumber(baseIps)}/s \u00d7 ${paceMult.toFixed(2)} = $${formatNumber(ips)}/s`;
-    }
-
     UPGRADE_ORDER.forEach(upgId => {
       const btn = document.querySelector(`.upg-btn[data-car="${car.id}"][data-upg="${upgId}"]`);
       if (!btn) return;
@@ -589,6 +813,8 @@ function updateChampLive() {
     if (bar) bar.style.width = pct + '%';
     const timer = card.querySelector('[data-live-timer]');
     if (timer) timer.textContent = 'Next round in ' + formatTime(remaining);
+    const roundEl = card.querySelector('.champ-round');
+    if (roundEl) roundEl.textContent = `Round ${entry.currentRound + 1}/${entry.maxRounds}`;
   });
 }
 

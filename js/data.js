@@ -383,3 +383,95 @@ function getPrerequisiteLabel(champDef) {
   });
   return names.length === 1 ? names[0] : names.join(' or ');
 }
+
+// ─── Sponsor System ───────────────────────────────────────────────────────────
+
+const SPONSOR_TIERS = {
+  starter: {
+    id: 'starter',
+    label: 'Family',
+    color: '#ff88cc',
+    incomeMin: 8, incomeMax: 8,
+    contractMin: null, contractMax: null,
+    target: null,
+    bonusCash: 0, bonusRep: 0, bonusPP: 0,
+    unlocksLivery: false,
+  },
+  regional: {
+    id: 'regional',
+    label: 'Regional',
+    color: '#4a8fff',
+    incomeMin: 20, incomeMax: 80,
+    contractMin: 1, contractMax: 2,
+    target: 'any_round_completed',
+    bonusCash: 10000, bonusRep: 0, bonusPP: 0,
+    unlocksLivery: false,
+  },
+  national: {
+    id: 'national',
+    label: 'National',
+    color: '#00d4ff',
+    incomeMin: 100, incomeMax: 300,
+    contractMin: 2, contractMax: 3,
+    target: 'any_champ_completed',
+    bonusCash: 40000, bonusRep: 200, bonusPP: 0,
+    unlocksLivery: false,
+  },
+  international: {
+    id: 'international',
+    label: 'International',
+    color: '#ff8800',
+    incomeMin: 400, incomeMax: 1000,
+    contractMin: 3, contractMax: 3,
+    target: 'major_champ_completed',
+    bonusCash: 150000, bonusRep: 1000, bonusPP: 0,
+    unlocksLivery: false,
+  },
+  factory: {
+    id: 'factory',
+    label: 'Factory Title',
+    color: '#ff0055',
+    incomeMin: 2000, incomeMax: 5000,
+    contractMin: null, contractMax: null,
+    target: 'top_champ_completed',
+    bonusCash: 0, bonusRep: 0, bonusPP: 5,
+    unlocksLivery: true,
+  },
+};
+
+// Human-readable descriptions for target types
+const SPONSOR_TARGET_LABELS = {
+  any_round_completed: 'Top 10 in any championship round this season',
+  any_champ_completed: 'Complete any championship this season',
+  major_champ_completed: 'Complete a major championship (IMSA, ELMS, WEC, or F1)',
+  top_champ_completed: 'Win FIA WEC or F1 World Championship',
+};
+
+// Slot unlock conditions (index = slot number - 1)
+const SPONSOR_SLOT_UNLOCKS = [
+  { slot: 1, condition: null,                                           label: 'Default slot' },
+  { slot: 2, condition: { type: 'champ', champId: 'gt4_regional' },    label: 'Complete GT4 Regional Cup' },
+  { slot: 3, condition: { type: 'rep',   amount: 3500  },              label: 'Reach 3,500 REP' },
+  { slot: 4, condition: { type: 'rep',   amount: 20000 },              label: 'Reach 20,000 REP' },
+  { slot: 5, condition: { type: 'rep',   amount: 80000 },              label: 'Reach 80,000 REP' },
+];
+
+const SPONSOR_CATEGORIES = [
+  { id: 'tyre',    name: 'Tyres',        icon: '◎' },
+  { id: 'fuel',    name: 'Fuel',         icon: '◈' },
+  { id: 'apparel', name: 'Apparel',      icon: '◆' },
+  { id: 'energy',  name: 'Energy Drink', icon: '⚡' },
+  { id: 'tech',    name: 'Technology',   icon: '⬡' },
+  { id: 'finance', name: 'Finance',      icon: '▣' },
+];
+
+const SPONSOR_BRAND_WORDS = {
+  tyre:    ['Apex', 'Grip', 'Vector', 'Traction', 'Circuit', 'Velo'],
+  fuel:    ['Nitro', 'Blaze', 'Surge', 'Turbo', 'Flash', 'Ignite'],
+  apparel: ['Rally', 'Podium', 'Victory', 'Champion', 'Elite', 'Pace'],
+  energy:  ['Volt', 'Rush', 'Pulse', 'Blast', 'Charge', 'Jolt'],
+  tech:    ['Nexus', 'Vertex', 'Core', 'Synapse', 'Quantum', 'Prism'],
+  finance: ['Capital', 'Premier', 'Summit', 'Sterling', 'Vault', 'Meridian'],
+};
+
+const SPONSOR_SUFFIXES = ['Racing', 'Motorsport', 'Pro', 'Sport', 'Performance', 'Systems'];

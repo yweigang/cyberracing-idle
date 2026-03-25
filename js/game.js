@@ -44,6 +44,8 @@ function createDefaultState() {
       },
       purchased: [],
     },
+    sponsors: [null, null, null, null, null],
+    hasFactoryLivery: false,
     notifications: [],
   };
 }
@@ -81,8 +83,19 @@ function calcCarIncomePerSec(car) {
     * driverMult * champBonus * G.prestige.permanentBonuses.incomeMultiplier;
 }
 
+// Sponsor income is now the primary passive income source.
+// Car income formula is retained only for championship payout bonus calculations.
+function calcSponsorIncomePerSec() {
+  const sponsorBonus = (G.prestige && G.prestige.permanentBonuses && G.prestige.permanentBonuses.sponsorBonus) || 0;
+  const sponsorMult  = 1 + sponsorBonus;
+  const parentsIncome = 8; // Mum & Dad Racing Support — always active
+  const sponsors = Array.isArray(G.sponsors) ? G.sponsors : [];
+  const earnedIncome = sponsors.reduce((sum, s) => sum + (s ? s.incomePerSec : 0), 0);
+  return (parentsIncome + earnedIncome) * sponsorMult;
+}
+
 function calcTotalIncomePerSec() {
-  return G.cars.reduce((sum, car) => sum + calcCarIncomePerSec(car), 0);
+  return calcSponsorIncomePerSec();
 }
 
 // ─── Upgrade Logic ────────────────────────────────────────────────────────────
@@ -343,6 +356,153 @@ function fireDriver(driverId) {
   return { ok: true, name };
 }
 
+// ─── Sponsor System ──────────────────────────────────────────────────────────
+
+function getSponsorSlotsUnlocked() {
+  let slots = 1;
+  if (hasCompletedChampionship('gt4_regional')) slots = Math.max(slots, 2);
+  if (G.reputation >= 3500)  slots = Math.max(slots, 3);
+  if (G.reputation >= 20000) slots = Math.max(slots, 4);
+  if (G.reputation >= 80000) slots = Math.max(slots, 5);
+  return slots;
+}
+
+function isSponsorTargetMet(sponsor) {
+  if (!sponsor.target) return true;
+  const thisSeasonChamps = G.completedChampionships.filter(c => c.season === G.season);
+  switch (sponsor.target) {
+    case 'any_round_completed':
+      return thisSeasonChamps.length > 0 ||
+             G.activeChampionships.some(c => c.currentRound > 0);
+    case 'any_champ_completed':
+      return thisSeasonChamps.length > 0;
+    case 'major_champ_completed':
+      return thisSeasonChamps.some(c =>
+        ['imsa_weathertech', 'elms', 'fia_wec', 'f1_world_championship'].includes(c.definitionId));
+    case 'top_champ_completed':
+      return thisSeasonChamps.some(c =>
+        ['fia_wec', 'f1_world_championship'].includes(c.definitionId));
+    default:
+      return false;
+  }
+}
+
+function getAvailableSponsorTiers() {
+  const tiers = ['regional'];
+  if ((G.champCompletions['gt4_regional'] || 0) > 0)
+    tiers.push('national');
+  if ((G.champCompletions['gt_world_challenge'] || 0) > 0 ||
+      (G.champCompletions['imsa_weathertech'] || 0) > 0)
+    tiers.push('international');
+  if ((G.champCompletions['fia_wec'] || 0) > 0 ||
+      (G.champCompletions['f1_world_championship'] || 0) > 0)
+    tiers.push('factory');
+  return tiers;
+}
+
+function generateSponsor(tier) {
+  const tierDef = SPONSOR_TIERS[tier];
+  const cat = SPONSOR_CATEGORIES[Math.floor(Math.random() * SPONSOR_CATEGORIES.length)];
+  const brandWords = SPONSOR_BRAND_WORDS[cat.id];
+  const brand  = brandWords[Math.floor(Math.random() * brandWords.length)];
+  const suffix = SPONSOR_SUFFIXES[Math.floor(Math.random() * SPONSOR_SUFFIXES.length)];
+
+  const incomePerSec = Math.floor(
+    tierDef.incomeMin + Math.random() * (tierDef.incomeMax - tierDef.incomeMin + 1)
+  );
+  const seasonsRemaining = tierDef.contractMin !== null
+    ? tierDef.contractMin + Math.floor(Math.random() * (tierDef.contractMax - tierDef.contractMin + 1))
+    : null;
+
+  return {
+    id: 'sp_' + Date.now() + '_' + Math.floor(Math.random() * 9999),
+    name: brand + ' ' + suffix,
+    category: cat.id,
+    tier,
+    incomePerSec,
+    seasonsRemaining,
+    bonusCash: tierDef.bonusCash,
+    bonusRep: tierDef.bonusRep,
+    bonusPP: tierDef.bonusPP,
+    unlocksLivery: tierDef.unlocksLivery,
+  };
+}
+
+function generateSponsorOptions() {
+  const availTiers = getAvailableSponsorTiers();
+  const options = [];
+  const usedNames = new Set();
+  let attempts = 0;
+  while (options.length < 3 && attempts < 30) {
+    const tier = availTiers[Math.floor(Math.random() * availTiers.length)];
+    const s = generateSponsor(tier);
+    if (!usedNames.has(s.name)) {
+      usedNames.add(s.name);
+      options.push(s);
+    }
+    attempts++;
+  }
+  while (options.length < 3) options.push(generateSponsor(availTiers[0]));
+  return options;
+}
+
+function signSponsor(slotIndex, sponsorData) {
+  if (slotIndex < 0 || slotIndex > 4)
+    return { ok: false, msg: 'Invalid slot.' };
+  if (slotIndex + 1 > getSponsorSlotsUnlocked())
+    return { ok: false, msg: 'Slot not yet unlocked.' };
+  if (G.sponsors[slotIndex] !== null)
+    return { ok: false, msg: 'Slot already occupied.' };
+  G.sponsors[slotIndex] = { ...sponsorData };
+  addNotification(`Signed ${sponsorData.name} — $${formatNumber(sponsorData.incomePerSec)}/s!`, 'success');
+  return { ok: true };
+}
+
+function terminateSponsor(sponsorId) {
+  const idx = G.sponsors.findIndex(s => s && s.id === sponsorId);
+  if (idx === -1) return { ok: false, msg: 'Sponsor not found.' };
+  const name = G.sponsors[idx].name;
+  G.sponsors[idx] = null;
+  addNotification(`${name} contract terminated.`, 'info');
+  return { ok: true };
+}
+
+function evaluateSponsorsAtSeasonEnd() {
+  G.sponsors.forEach((s, i) => {
+    if (!s) return;
+    const met = isSponsorTargetMet(s);
+    if (met) {
+      if (s.bonusCash > 0) {
+        G.money += s.bonusCash;
+        G.totalEarned += s.bonusCash;
+        addNotification(`${s.name} season bonus: +$${formatNumber(s.bonusCash)}!`, 'success');
+      }
+      if (s.bonusRep > 0) {
+        G.reputation += s.bonusRep;
+        addNotification(`${s.name}: +${formatNumber(s.bonusRep)} REP bonus!`, 'success');
+      }
+      if (s.bonusPP > 0) {
+        G.prestigePoints += s.bonusPP;
+        addNotification(`${s.name}: +${s.bonusPP} PP!`, 'prestige');
+      }
+      if (s.unlocksLivery && !G.hasFactoryLivery) {
+        G.hasFactoryLivery = true;
+        addNotification('Factory livery unlocked!', 'prestige');
+      }
+      if (s.seasonsRemaining !== null) {
+        s.seasonsRemaining--;
+        if (s.seasonsRemaining <= 0) {
+          G.sponsors[i] = null;
+          addNotification(`${s.name} contract ended — slot ${i + 1} is open.`, 'info');
+        }
+      }
+    } else {
+      addNotification(`${s.name} target not met — contract terminated.`, 'error');
+      G.sponsors[i] = null;
+    }
+  });
+}
+
 // ─── Season Reset (Prestige) ─────────────────────────────────────────────────
 
 function canPrestige() {
@@ -359,6 +519,9 @@ function calcPrestigePoints() {
 
 function doPrestige() {
   if (!canPrestige()) return { ok: false, msg: 'Complete at least one championship first.' };
+
+  // Evaluate sponsor contracts before the season increments
+  evaluateSponsorsAtSeasonEnd();
 
   const ppGain = calcPrestigePoints();
   G.prestigePoints += ppGain;
@@ -528,6 +691,7 @@ function loadGame() {
     // Merge with defaults to handle new keys added in updates
     G = Object.assign(createDefaultState(), saved);
     _migrateDriverStats();
+    _migrateSponsors();
     return true;
   } catch (e) {
     console.warn('Load failed:', e);
@@ -550,6 +714,15 @@ function _migrateDriverStats() {
       driver.primaryStat    = primaryStat;
     }
   });
+}
+
+// Ensure sponsors array is always a 5-element array (handles old saves)
+function _migrateSponsors() {
+  if (!Array.isArray(G.sponsors) || G.sponsors.length !== 5) {
+    const existing = Array.isArray(G.sponsors) ? G.sponsors.filter(Boolean) : [];
+    G.sponsors = [null, null, null, null, null];
+    existing.forEach((s, i) => { if (i < 5) G.sponsors[i] = s; });
+  }
 }
 
 function resetGame() {
@@ -599,7 +772,7 @@ function gameLoop(now) {
   const delta = now - _lastTick;
   _lastTick = now;
 
-  tick(delta);
+  try { tick(delta); } catch (e) { console.error('[gameLoop] tick error:', e); }
 
   if (now - _lastSaveTime > SAVE_INTERVAL_MS) {
     saveGame();
