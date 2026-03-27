@@ -475,3 +475,75 @@ const SPONSOR_BRAND_WORDS = {
 };
 
 const SPONSOR_SUFFIXES = ['Racing', 'Motorsport', 'Pro', 'Sport', 'Performance', 'Systems'];
+
+// ─── Team Staff ────────────────────────────────────────────────────────────────
+
+const TP_TIERS = {
+  amateur:      { id: 'amateur',      label: 'Amateur',       color: '#888888', hireCost: 0,       salary: 0,      locked: false },
+  regional:     { id: 'regional',     label: 'Regional',      color: '#44aa44', hireCost: 50000,   salary: 10000,  locked: false },
+  national:     { id: 'national',     label: 'National',      color: '#4488ff', hireCost: 200000,  salary: 50000,  locked: false },
+  international:{ id: 'international',label: 'International', color: '#aa44ff', hireCost: 750000,  salary: 200000, locked: false },
+  legendary:    { id: 'legendary',    label: 'Legend',        color: '#ffaa00', hireCost: 0,       salary: 500000, locked: true  },
+};
+
+const TP_STAT_CONFIG = {
+  amateur:      { budgetMin: 50,  budgetMax: 70,  floor: 5,  ceiling: 25  },
+  regional:     { budgetMin: 80,  budgetMax: 110, floor: 8,  ceiling: 38  },
+  national:     { budgetMin: 130, budgetMax: 160, floor: 15, ceiling: 60  },
+  international:{ budgetMin: 180, budgetMax: 220, floor: 25, ceiling: 80  },
+  legendary:    { budgetMin: 260, budgetMax: 300, floor: 40, ceiling: 100 },
+};
+
+const TP_STAT_KEYS = ['motivation', 'strategy', 'budgetManagement', 'sponsorshipNetwork', 'talentEye'];
+const TP_STAT_LABELS = {
+  motivation:         'Motivation',
+  strategy:           'Strategy',
+  budgetManagement:   'Budget Mgmt',
+  sponsorshipNetwork: 'Sponsorship',
+  talentEye:          'Talent Eye',
+};
+const TP_STAT_DESCS = {
+  motivation:         'Boosts all driver pace multipliers',
+  strategy:           'Extra REP per championship round',
+  budgetManagement:   'Reduces upgrade costs',
+  sponsorshipNetwork: 'Increases all sponsor income',
+  talentEye:          'Reduces driver scouting costs',
+};
+
+const RE_TIERS = {
+  amateur:      { id: 'amateur',      label: 'Amateur',       color: '#888888', hireCost: 0,       salary: 0,      locked: false },
+  regional:     { id: 'regional',     label: 'Regional',      color: '#44aa44', hireCost: 30000,   salary: 8000,   locked: false },
+  national:     { id: 'national',     label: 'National',      color: '#4488ff', hireCost: 120000,  salary: 30000,  locked: false },
+  international:{ id: 'international',label: 'International', color: '#aa44ff', hireCost: 450000,  salary: 100000, locked: false },
+  legendary:    { id: 'legendary',    label: 'Legend',        color: '#ffaa00', hireCost: 0,       salary: 300000, locked: true  },
+};
+
+const RE_STAT_CONFIG = {
+  amateur:      { budgetMin: 50,  budgetMax: 70,  floor: 5,  ceiling: 25  },
+  regional:     { budgetMin: 80,  budgetMax: 110, floor: 8,  ceiling: 38  },
+  national:     { budgetMin: 130, budgetMax: 160, floor: 15, ceiling: 60  },
+  international:{ budgetMin: 180, budgetMax: 220, floor: 25, ceiling: 80  },
+  legendary:    { budgetMin: 260, budgetMax: 300, floor: 40, ceiling: 100 },
+};
+
+const RE_STAT_KEYS = ['setupMastery', 'reliabilityEngineering', 'pitWallStrategy', 'driverCoach', 'dataAnalysis'];
+const RE_STAT_LABELS = {
+  setupMastery:           'Setup Mastery',
+  reliabilityEngineering: 'Reliability Eng.',
+  pitWallStrategy:        'Pit Strategy',
+  driverCoach:            'Driver Coach',
+  dataAnalysis:           'Data Analysis',
+};
+const RE_STAT_DESCS = {
+  setupMastery:           'Boosts all upgrade multipliers on this car',
+  reliabilityEngineering: 'Boosts reliability multiplier on this car',
+  pitWallStrategy:        'Increases championship income bonus for this car',
+  driverCoach:            'Increases assigned driver XP gain',
+  dataAnalysis:           'Boosts championship final payout bonus',
+};
+
+const STAFF_NAMES = [
+  'Marco Rossi', 'James Wright', 'Elena Kovač', 'Yuki Hara', 'Chris Barlow',
+  'Sofia Andrade', 'Neil Hartley', 'Ana Santos', 'Raj Mehta', 'Tom Clancy',
+  'Ingrid Bauer', 'Luca Ferrari', 'Mei Chen', 'Ben Archer', 'Natasha Volkov',
+];

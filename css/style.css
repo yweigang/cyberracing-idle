@@ -891,6 +891,176 @@ select { font-family: inherit; }
 }
 .cancel-sign-btn { color: var(--text-2); }
 
+/* ─── Car RE bar (inline in Garage) ─────────────────────────────────────── */
+.car-re-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 10px;
+  background: var(--bg-3);
+  border-radius: var(--radius);
+  margin-bottom: 10px;
+  flex-wrap: wrap;
+}
+.car-re-label {
+  font-size: 9px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--text-3);
+  min-width: 18px;
+}
+.car-re-name  { font-size: 13px; font-weight: 600; }
+.car-re-tier  { font-size: 10px; letter-spacing: 0.5px; }
+.car-re-primary { font-size: 11px; color: var(--text-2); flex: 1; }
+.car-re-empty { font-size: 12px; color: var(--text-3); flex: 1; font-style: italic; }
+.car-re-btn {
+  padding: 4px 10px;
+  font-size: 11px;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+/* ─── Staff Panel ─────────────────────────────────────────────────────────── */
+
+.staff-overview-bar {
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 14px 20px;
+  margin-bottom: 20px;
+}
+.staff-overview-stat  { display: flex; flex-direction: column; gap: 3px; }
+.staff-overview-label { font-size: 9px; letter-spacing: 1px; text-transform: uppercase; color: var(--text-3); }
+.staff-overview-value { font-family: var(--font-mono); font-size: 16px; font-weight: 700; }
+
+.staff-empty {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 14px 16px;
+  background: var(--bg-2);
+  border: 1px dashed var(--border-hi);
+  border-radius: var(--radius-lg);
+  margin-bottom: 16px;
+  font-size: 13px;
+  color: var(--text-2);
+}
+
+.staff-section-desc {
+  font-size: 12px;
+  color: var(--text-2);
+  margin-bottom: 10px;
+  font-style: italic;
+}
+
+/* Main staff card (hired TP or RE in detail view) */
+.staff-card, .staff-re-card {
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--staff-color, var(--cyan));
+  border-radius: var(--radius-lg);
+  padding: 14px 16px;
+  margin-bottom: 14px;
+}
+.staff-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 12px;
+}
+.staff-name       { font-weight: 700; font-size: 15px; }
+.staff-tier-label { font-size: 11px; letter-spacing: 0.5px; margin-top: 2px; }
+.staff-salary-badge {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--red);
+  padding: 3px 8px;
+  background: #1e0a0e;
+  border: 1px solid #441422;
+  border-radius: var(--radius);
+}
+
+.staff-stats-grid {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+
+.staff-bonuses {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+.staff-bonuses span {
+  font-size: 11px;
+  padding: 2px 8px;
+  background: var(--bg-3);
+  border: 1px solid var(--border-hi);
+  border-radius: 10px;
+  color: var(--green);
+  font-family: var(--font-mono);
+}
+
+.staff-card-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* Candidate grid */
+.staff-candidates-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 12px;
+  margin-bottom: 4px;
+}
+.staff-candidate-card {
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-top: 2px solid var(--staff-color, var(--cyan));
+  border-radius: var(--radius-lg);
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.staff-tier-badge {
+  font-size: 10px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  font-weight: 600;
+}
+.staff-cand-name  { font-weight: 600; font-size: 14px; }
+.staff-cand-cost  { display: flex; flex-direction: column; gap: 2px; font-size: 11px; }
+.staff-hire-cost  { color: var(--amber); font-family: var(--font-mono); }
+.staff-salary     { color: var(--red); }
+.staff-hire-btn   { font-weight: 600; margin-top: auto; }
+
+/* RE rows */
+.staff-re-row {
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 14px 16px;
+  margin-bottom: 12px;
+}
+.staff-re-car-name {
+  font-size: 11px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--text-3);
+  margin-bottom: 8px;
+}
+.staff-re-empty {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 12px;
+  color: var(--text-3);
+}
+
 /* ─── Prestige Panel ─────────────────────────────────────────────────────── */
 .prestige-info {
   background: var(--bg-2);

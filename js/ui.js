@@ -8,11 +8,18 @@ let _lastNotifCount = 0;
 let _selectedCarForChamp = null;
 let _signingSlotIndex = null;  // 0–4 or null
 let _sponsorOptions = [];      // array of 3 generated sponsor objects
+let _hiringTP = false;
+let _tpCandidates = [];
+let _hiringRECarId = null;     // carId being hired for, or null
+let _reCandidates = [];
 
 // ─── Tab Navigation ───────────────────────────────────────────────────────────
 
 function switchTab(tabId) {
   _activeTab = tabId;
+  // Clear staff hiring state on tab switch
+  _hiringTP = false; _tpCandidates = [];
+  _hiringRECarId = null; _reCandidates = [];
   document.querySelectorAll('.tab-btn').forEach(btn => {
     btn.classList.toggle('active', btn.dataset.tab === tabId);
   });
@@ -28,6 +35,7 @@ function renderActivePanel() {
     case 'championships': renderChampionships(); break;
     case 'drivers':       renderDrivers(); break;
     case 'sponsors':      renderSponsors(); break;
+    case 'staff':         renderStaff(); break;
     case 'prestige':      renderPrestige(); break;
   }
 }
@@ -138,12 +146,27 @@ function renderGarage() {
         ? G.activeChampionships.find(c => c.id === car.championshipId) : null;
       const champDef = activeChamp ? getChampionshipById(activeChamp.definitionId) : null;
 
+      // RE mini-bar for this car
+      const re = getREForCar(car.id);
+      const reTierDef = re ? RE_TIERS[re.tier] : null;
+      const reHtml = `
+        <div class="car-re-bar">
+          <span class="car-re-label">RE</span>
+          ${re
+            ? `<span class="car-re-name" style="color:${reTierDef.color}">${re.name}</span>
+               <span class="car-re-tier" style="color:${reTierDef.color}">${reTierDef.label}</span>
+               <span class="car-re-primary">${RE_STAT_LABELS[re.primaryStat] || re.primaryStat} ${re[re.primaryStat]}</span>`
+            : `<span class="car-re-empty">No engineer</span>`
+          }
+          <button class="btn car-re-btn" data-car="${car.id}">${re ? 'Change' : 'Hire RE'}</button>
+        </div>`;
+
       // Upgrades
       let upgradesHtml = '';
       UPGRADE_ORDER.forEach(upgId => {
         const upg = UPGRADES[upgId];
         const lvl = car.upgrades[upgId];
-        const cost = getUpgradeCost(upgId, lvl);
+        const cost = getEffectiveUpgradeCost(upgId, lvl);
         const maxed = lvl >= upg.maxLevel;
         const canAfford = G.money >= cost && !maxed;
         const progress = (lvl / upg.maxLevel) * 100;
@@ -195,6 +218,7 @@ function renderGarage() {
               ${activeChamp ? '🏁 ' + champDef.shortName + ' R' + activeChamp.currentRound + '/' + activeChamp.maxRounds : '◯ No Championship'}
             </span>
           </div>
+          ${reHtml}
           <div class="upgrades-section">${upgradesHtml}</div>
         </div>`;
     });
@@ -229,6 +253,15 @@ function renderGarage() {
       const result = buyUpgrade(btn.dataset.car, btn.dataset.upg);
       if (!result.ok) addNotification(result.msg, 'error');
       renderGarage();
+    });
+  });
+
+  // Hire / Change RE buttons in car cards
+  container.querySelectorAll('.car-re-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      _hiringRECarId = btn.dataset.car;
+      _reCandidates  = generateREOptions();
+      switchTab('staff');
     });
   });
 }
@@ -715,6 +748,243 @@ function updateSponsorsLive() {
       targetEl.textContent = (met ? '✓ ' : '✗ ') + lbl;
       targetEl.className = 'sponsor-target-badge ' + (met ? 'met' : 'unmet');
     }
+  });
+}
+
+// ─── Staff Panel ─────────────────────────────────────────────────────────────
+
+function _renderStaffStatBlock(staffObj, statKeys, statLabels) {
+  return statKeys.map(key => {
+    const isPrimary = staffObj.primaryStat === key;
+    return `<div class="dstat ${isPrimary ? 'dstat-primary' : ''}">
+      <span class="dstat-label">${statLabels[key]}</span>
+      <span class="dstat-value">${staffObj[key] ?? '–'}</span>
+      ${isPrimary ? '<span class="dstat-star">★</span>' : ''}
+    </div>`;
+  }).join('');
+}
+
+function _renderStaffCandidateGrid(candidates, statKeys, statLabels, tiersDef, hireDataAttr, cancelAttr) {
+  let html = '<div class="staff-candidates-grid">';
+  candidates.forEach((c, idx) => {
+    const tierDef = tiersDef[c.tier];
+    const statsHtml = _renderStaffStatBlock(c, statKeys, statLabels);
+    const hireCostLabel = tierDef.hireCost > 0 ? `$${formatNumber(tierDef.hireCost)}` : 'Free';
+    const salaryLabel   = tierDef.salary > 0 ? `$${formatNumber(tierDef.salary)}/season` : 'No salary';
+    html += `
+      <div class="staff-candidate-card" style="--staff-color: ${tierDef.color}">
+        <div class="staff-tier-badge" style="color:${tierDef.color}">${tierDef.label}</div>
+        <div class="staff-cand-name">${c.name}</div>
+        <div class="staff-stats-grid">${statsHtml}</div>
+        <div class="staff-cand-cost">
+          <span class="staff-hire-cost">${hireCostLabel}</span>
+          <span class="staff-salary">${salaryLabel}</span>
+        </div>
+        <button class="btn staff-hire-btn" style="border-color:${tierDef.color};color:${tierDef.color}"
+          data-${hireDataAttr}="${idx}">Hire</button>
+      </div>`;
+  });
+  html += `</div>
+    <button class="btn cancel-sign-btn" data-${cancelAttr}="1" style="margin-top:12px">Cancel</button>`;
+  return html;
+}
+
+function renderStaff() {
+  const container = document.getElementById('panel-staff');
+  const tp = G.teamPrincipal;
+
+  // ── Season salary preview
+  let totalSalary = tp ? tp.salary : 0;
+  if (G.raceEngineers) Object.values(G.raceEngineers).forEach(re => { totalSalary += re.salary; });
+
+  let html = `
+    <div class="section-header">STAFF</div>
+    <div class="staff-overview-bar">
+      <div class="staff-overview-stat">
+        <span class="staff-overview-label">Season Salary Bill</span>
+        <span class="staff-overview-value" style="color:var(--red)">${totalSalary > 0 ? '-$' + formatNumber(totalSalary) + '/season' : 'No salaries'}</span>
+      </div>
+    </div>`;
+
+  // ── Team Principal section
+  html += `<div class="section-header">TEAM PRINCIPAL</div>`;
+
+  if (_hiringTP) {
+    html += `<div class="staff-section-desc">Choose your Team Principal:</div>`;
+    html += _renderStaffCandidateGrid(_tpCandidates, TP_STAT_KEYS, TP_STAT_LABELS, TP_TIERS, 'tp-idx', 'cancel-tp');
+  } else if (!tp) {
+    html += `
+      <div class="staff-empty">
+        <span>No Team Principal. Hire one to unlock bonuses.</span>
+        <button class="btn" id="start-hire-tp">Hire Team Principal</button>
+      </div>`;
+  } else {
+    const tpTierDef = TP_TIERS[tp.tier];
+    const buyout = Math.floor(tpTierDef.hireCost * 0.25);
+    const statsHtml = _renderStaffStatBlock(tp, TP_STAT_KEYS, TP_STAT_LABELS);
+    const bonuses = getTPBonuses();
+    html += `
+      <div class="staff-card" style="--staff-color: ${tpTierDef.color}">
+        <div class="staff-card-header">
+          <div>
+            <div class="staff-name">${tp.name}</div>
+            <div class="staff-tier-label" style="color:${tpTierDef.color}">${tpTierDef.label} · Team Principal</div>
+          </div>
+          <div class="staff-salary-badge">${tp.salary > 0 ? '$' + formatNumber(tp.salary) + '/season' : 'No salary'}</div>
+        </div>
+        <div class="staff-stats-grid">${statsHtml}</div>
+        <div class="staff-bonuses">
+          <span>+${(bonuses.paceMult*100).toFixed(1)}% pace</span>
+          <span>+${bonuses.strategyRep} REP/round</span>
+          <span>-${((1-bonuses.upgradeCostMult)*100).toFixed(0)}% upgrades</span>
+          <span>+${(bonuses.sponsorMult*100).toFixed(1)}% sponsors</span>
+          <span>-${((1-bonuses.scoutCostMult)*100).toFixed(0)}% scouting</span>
+        </div>
+        <div class="staff-card-actions">
+          <button class="btn btn-danger fire-tp-btn">Fire</button>
+          <button class="btn upgrade-tp-btn">${buyout > 0 ? 'Replace (buyout $' + formatNumber(buyout) + ')' : 'Replace'}</button>
+        </div>
+      </div>`;
+  }
+
+  // ── Race Engineers section
+  html += `<div class="section-header">RACE ENGINEERS</div>`;
+
+  if (G.cars.length === 0) {
+    html += `<div class="staff-empty"><span>Buy a car first to assign race engineers.</span></div>`;
+  } else {
+    G.cars.forEach(car => {
+      const re = getREForCar(car.id);
+      const isHiringThis = _hiringRECarId === car.id;
+
+      html += `<div class="staff-re-row">
+        <div class="staff-re-car-name">${car.name}</div>`;
+
+      if (isHiringThis && _reCandidates.length > 0) {
+        html += `<div class="staff-section-desc">Choose a Race Engineer for ${car.name}:</div>`;
+        html += _renderStaffCandidateGrid(_reCandidates, RE_STAT_KEYS, RE_STAT_LABELS, RE_TIERS, 're-idx', 'cancel-re');
+      } else if (!re) {
+        html += `<div class="staff-re-empty">
+          <span>No engineer</span>
+          <button class="btn hire-re-btn" data-car="${car.id}">Hire RE</button>
+        </div>`;
+      } else {
+        const reTierDef = RE_TIERS[re.tier];
+        const buyout = Math.floor(reTierDef.hireCost * 0.25);
+        const statsHtml = _renderStaffStatBlock(re, RE_STAT_KEYS, RE_STAT_LABELS);
+        const reB = getREBonuses(car.id);
+        html += `
+          <div class="staff-re-card" style="--staff-color:${reTierDef.color}">
+            <div class="staff-card-header">
+              <div>
+                <div class="staff-name">${re.name}</div>
+                <div class="staff-tier-label" style="color:${reTierDef.color}">${reTierDef.label} · Race Engineer</div>
+              </div>
+              <div class="staff-salary-badge">${re.salary > 0 ? '$' + formatNumber(re.salary) + '/season' : 'No salary'}</div>
+            </div>
+            <div class="staff-stats-grid">${statsHtml}</div>
+            <div class="staff-bonuses">
+              <span>+${(reB.setupBonus*100).toFixed(0)}% upgrades</span>
+              <span>+${(reB.reliBonus*100).toFixed(0)}% reliability</span>
+              <span>+${(reB.pitBonus*100).toFixed(1)}% income</span>
+              <span>+${(reB.coachBonus*100).toFixed(0)}% XP</span>
+              <span>+${(reB.dataBonus*100).toFixed(0)}% payout</span>
+            </div>
+            <div class="staff-card-actions">
+              <button class="btn btn-danger fire-re-btn" data-car="${car.id}">Fire</button>
+              <button class="btn hire-re-btn" data-car="${car.id}">${buyout > 0 ? 'Replace ($' + formatNumber(buyout) + ')' : 'Replace'}</button>
+            </div>
+          </div>`;
+      }
+
+      html += `</div>`; // end staff-re-row
+    });
+  }
+
+  container.innerHTML = html;
+
+  // ── Events: hire TP
+  const startHireTPBtn = container.querySelector('#start-hire-tp');
+  if (startHireTPBtn) {
+    startHireTPBtn.addEventListener('click', () => {
+      _hiringTP = true;
+      _tpCandidates = generateTPOptions();
+      renderStaff();
+    });
+  }
+
+  // Upgrade/Replace TP button
+  const upgradeTPBtn = container.querySelector('.upgrade-tp-btn');
+  if (upgradeTPBtn) {
+    upgradeTPBtn.addEventListener('click', () => {
+      _hiringTP = true;
+      _tpCandidates = generateTPOptions();
+      renderStaff();
+    });
+  }
+
+  // Hire TP from candidates
+  container.querySelectorAll('[data-tp-idx]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const cand = _tpCandidates[parseInt(btn.dataset.tpIdx)];
+      const result = hireTP(cand);
+      if (result.ok) { _hiringTP = false; _tpCandidates = []; }
+      else addNotification(result.msg, 'error');
+      renderStaff();
+    });
+  });
+
+  // Cancel TP hiring
+  container.querySelectorAll('[data-cancel-tp]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      _hiringTP = false; _tpCandidates = [];
+      renderStaff();
+    });
+  });
+
+  // Fire TP
+  const fireTPBtn = container.querySelector('.fire-tp-btn');
+  if (fireTPBtn) {
+    fireTPBtn.addEventListener('click', () => {
+      fireTP();
+      renderStaff();
+    });
+  }
+
+  // Hire RE buttons (open candidates for that car)
+  container.querySelectorAll('.hire-re-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      _hiringRECarId = btn.dataset.car;
+      _reCandidates  = generateREOptions();
+      renderStaff();
+    });
+  });
+
+  // Hire RE from candidates
+  container.querySelectorAll('[data-re-idx]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const cand = _reCandidates[parseInt(btn.dataset.reIdx)];
+      const result = hireRE(_hiringRECarId, cand);
+      if (result.ok) { _hiringRECarId = null; _reCandidates = []; }
+      else addNotification(result.msg, 'error');
+      renderStaff();
+    });
+  });
+
+  // Cancel RE hiring
+  container.querySelectorAll('[data-cancel-re]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      _hiringRECarId = null; _reCandidates = [];
+      renderStaff();
+    });
+  });
+
+  // Fire RE buttons
+  container.querySelectorAll('.fire-re-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      fireRE(btn.dataset.car);
+      renderStaff();
+    });
   });
 }
 

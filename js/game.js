@@ -46,6 +46,8 @@ function createDefaultState() {
     },
     sponsors: [null, null, null, null, null],
     hasFactoryLivery: false,
+    teamPrincipal: null,
+    raceEngineers: {},
     notifications: [],
   };
 }
@@ -57,11 +59,14 @@ function calcCarIncomePerSec(car) {
   if (!cls) return 0;
 
   const upg = car.upgrades;
+  const re  = getREForCar(car.id);
+  const reB = re ? getREBonuses(car.id) : { setupBonus: 0, reliBonus: 0, pitBonus: 0 };
+
   const engMult   = UPGRADES.engine.getIncomeMult(upg.engine);
   const aeroMult  = UPGRADES.aero.getIncomeMult(upg.aero);
   const tyresMult = UPGRADES.tyres.getIncomeMult(upg.tyres);
   const brakeMult = UPGRADES.brakes.getIncomeMult(upg.brakes);
-  const reliMult  = UPGRADES.reliability.getIncomeMult(upg.reliability);
+  const reliMult  = UPGRADES.reliability.getIncomeMult(upg.reliability) * (1 + reB.reliBonus);
 
   let driverMult = 1.0;
   if (car.driverId !== null) {
@@ -74,20 +79,22 @@ function calcCarIncomePerSec(car) {
     const activeChamp = G.activeChampionships.find(c => c.id === car.championshipId);
     if (activeChamp) {
       const champDef = getChampionshipById(activeChamp.definitionId);
-      if (champDef) champBonus = 1 + champDef.incomeBonus;
+      if (champDef) champBonus = 1 + champDef.incomeBonus + reB.pitBonus;
     }
   }
 
   const basePerSec = cls.baseIncomePerLap / cls.lapTimeSec;
   return basePerSec * engMult * aeroMult * tyresMult * brakeMult * reliMult
-    * driverMult * champBonus * G.prestige.permanentBonuses.incomeMultiplier;
+    * driverMult * champBonus * G.prestige.permanentBonuses.incomeMultiplier
+    * (1 + reB.setupBonus);
 }
 
 // Sponsor income is now the primary passive income source.
 // Car income formula is retained only for championship payout bonus calculations.
 function calcSponsorIncomePerSec() {
-  const sponsorBonus = (G.prestige && G.prestige.permanentBonuses && G.prestige.permanentBonuses.sponsorBonus) || 0;
-  const sponsorMult  = 1 + sponsorBonus;
+  const prestigeBonus = (G.prestige && G.prestige.permanentBonuses && G.prestige.permanentBonuses.sponsorBonus) || 0;
+  const tpBonus = getTPBonuses().sponsorMult;
+  const sponsorMult = 1 + prestigeBonus + tpBonus;
   const parentsIncome = 8; // Mum & Dad Racing Support — always active
   const sponsors = Array.isArray(G.sponsors) ? G.sponsors : [];
   const earnedIncome = sponsors.reduce((sum, s) => sum + (s ? s.incomePerSec : 0), 0);
@@ -101,7 +108,7 @@ function calcTotalIncomePerSec() {
 // ─── Upgrade Logic ────────────────────────────────────────────────────────────
 
 function canAffordUpgrade(car, upgradeId) {
-  const cost = getUpgradeCost(upgradeId, car.upgrades[upgradeId]);
+  const cost = getEffectiveUpgradeCost(upgradeId, car.upgrades[upgradeId]);
   return G.money >= cost;
 }
 
@@ -114,7 +121,7 @@ function buyUpgrade(carId, upgradeId) {
   if (!car) return { ok: false, msg: 'Car not found.' };
   if (isUpgradeMaxed(car, upgradeId)) return { ok: false, msg: 'Already maxed.' };
 
-  const cost = getUpgradeCost(upgradeId, car.upgrades[upgradeId]);
+  const cost = getEffectiveUpgradeCost(upgradeId, car.upgrades[upgradeId]);
   if (G.money < cost) return { ok: false, msg: 'Not enough money.' };
 
   G.money -= cost;
@@ -280,9 +287,10 @@ function scoutDriver(tier) {
   const tierDef = DRIVER_TIERS[tier];
   if (!tierDef) return { ok: false, msg: 'Unknown tier.' };
   if (tierDef.locked) return { ok: false, msg: 'Special acquisition only.' };
-  if (G.money < tierDef.scoutCost) return { ok: false, msg: 'Not enough money.' };
+  const effectiveScoutCost = Math.floor(tierDef.scoutCost * getTPBonuses().scoutCostMult);
+  if (G.money < effectiveScoutCost) return { ok: false, msg: 'Not enough money.' };
 
-  G.money -= tierDef.scoutCost;
+  G.money -= effectiveScoutCost;
 
   const { stats, primaryStat } = generateDriverStats(tier, Math.random);
   const name = DRIVER_NAMES[Math.floor(Math.random() * DRIVER_NAMES.length)];
@@ -306,9 +314,10 @@ function scoutDriver(tier) {
 
 // Returns the pace-based income multiplier for a car (1.0 if no driver).
 function calcDriverPaceMult(car) {
-  if (!car.driverId) return 1.0;
+  const tpMot = getTPBonuses().paceMult; // TP motivation bonus applies even without a driver
+  if (!car.driverId) return 1.0 + tpMot;
   const driver = G.drivers.find(d => d.id === car.driverId);
-  return driver ? 1 + driver.pace / 100 : 1.0;
+  return driver ? 1 + driver.pace / 100 + tpMot : 1.0 + tpMot;
 }
 
 function assignDriver(driverId, carId) {
@@ -503,6 +512,169 @@ function evaluateSponsorsAtSeasonEnd() {
   });
 }
 
+// ─── Team Staff System ────────────────────────────────────────────────────────
+
+// Shared stat budget generator (used by both TP and RE)
+function generateBudgetStats(statKeys, statConfig, tier, randFn) {
+  const cfg = statConfig[tier];
+  const budget = Math.floor(randFn() * (cfg.budgetMax - cfg.budgetMin + 1)) + cfg.budgetMin;
+  const primaryIdx = Math.floor(randFn() * statKeys.length);
+  const primaryKey = statKeys[primaryIdx];
+  const primaryRaw = Math.round(budget * (0.30 + randFn() * 0.10));
+  const primaryVal = Math.min(cfg.ceiling, Math.max(cfg.floor, primaryRaw));
+  const remaining  = budget - primaryVal;
+  const otherKeys  = statKeys.filter(k => k !== primaryKey);
+  const weights    = otherKeys.map(() => randFn() + 0.2);
+  const wTotal     = weights.reduce((a, b) => a + b, 0);
+  const stats = { [primaryKey]: primaryVal };
+  otherKeys.forEach((key, i) => {
+    const raw = Math.round(remaining * weights[i] / wTotal);
+    stats[key] = Math.min(cfg.ceiling, Math.max(cfg.floor, raw));
+  });
+  return { stats, primaryStat: primaryKey };
+}
+
+// Returns computed bonuses from the active TP (or all zeros if none)
+function getTPBonuses() {
+  const tp = G.teamPrincipal;
+  if (!tp) return { paceMult: 0, strategyRep: 0, upgradeCostMult: 1, sponsorMult: 0, scoutCostMult: 1 };
+  return {
+    paceMult:        tp.motivation         / 100 * 0.20,       // up to +20% driver pace
+    strategyRep:     Math.round(tp.strategy / 100 * 2),        // up to +2 REP per round
+    upgradeCostMult: 1 - tp.budgetManagement / 100 * 0.20,     // up to -20% upgrade cost
+    sponsorMult:     tp.sponsorshipNetwork  / 100 * 0.30,      // up to +30% sponsor income
+    scoutCostMult:   1 - tp.talentEye       / 100 * 0.30,      // up to -30% scout cost
+  };
+}
+
+function getREForCar(carId) {
+  return (G.raceEngineers && G.raceEngineers[carId]) || null;
+}
+
+// Returns computed bonuses from a car's RE (or all zeros if none)
+function getREBonuses(carId) {
+  const re = getREForCar(carId);
+  if (!re) return { setupBonus: 0, reliBonus: 0, pitBonus: 0, coachBonus: 0, dataBonus: 0 };
+  return {
+    setupBonus: re.setupMastery           / 100 * 0.10,  // up to +10% all upgrade mults
+    reliBonus:  re.reliabilityEngineering / 100 * 0.20,  // up to +20% reliability mult
+    pitBonus:   re.pitWallStrategy        / 100 * 0.05,  // up to +5% champ income bonus
+    coachBonus: re.driverCoach            / 100 * 0.50,  // up to +50% driver XP
+    dataBonus:  re.dataAnalysis           / 100 * 0.10,  // up to +10% final payout
+  };
+}
+
+// Upgrade cost after TP budget management discount
+function getEffectiveUpgradeCost(upgradeId, currentLevel) {
+  const base = getUpgradeCost(upgradeId, currentLevel);
+  return Math.max(1, Math.floor(base * getTPBonuses().upgradeCostMult));
+}
+
+function _generateStaff(type, tier) {
+  const statKeys   = type === 'tp' ? TP_STAT_KEYS   : RE_STAT_KEYS;
+  const statConfig = type === 'tp' ? TP_STAT_CONFIG  : RE_STAT_CONFIG;
+  const tierDef    = type === 'tp' ? TP_TIERS[tier]  : RE_TIERS[tier];
+  const { stats, primaryStat } = generateBudgetStats(statKeys, statConfig, tier, Math.random);
+  const name = STAFF_NAMES[Math.floor(Math.random() * STAFF_NAMES.length)];
+  const obj  = {
+    id: 'staff_' + Date.now() + '_' + Math.floor(Math.random() * 9999),
+    type,
+    tier,
+    name,
+    primaryStat,
+    salary: tierDef.salary,
+  };
+  statKeys.forEach(k => { obj[k] = stats[k]; });
+  return obj;
+}
+
+function generateTPOptions() {
+  return Object.keys(TP_TIERS)
+    .filter(tier => !TP_TIERS[tier].locked)
+    .map(tier => _generateStaff('tp', tier));
+}
+
+function generateREOptions() {
+  return Object.keys(RE_TIERS)
+    .filter(tier => !RE_TIERS[tier].locked)
+    .map(tier => _generateStaff('re', tier));
+}
+
+function hireTP(staffData) {
+  if (G.teamPrincipal) {
+    const existingTierDef = TP_TIERS[G.teamPrincipal.tier];
+    const buyout = Math.floor(existingTierDef.hireCost * 0.25);
+    if (G.money < buyout) return { ok: false, msg: `Buying out current TP costs $${formatNumber(buyout)}.` };
+    G.money -= buyout;
+    addNotification(`Bought out ${G.teamPrincipal.name} for $${formatNumber(buyout)}.`, 'info');
+  }
+  const tierDef = TP_TIERS[staffData.tier];
+  if (tierDef.hireCost > 0) {
+    if (G.money < tierDef.hireCost) return { ok: false, msg: 'Not enough money.' };
+    G.money -= tierDef.hireCost;
+  }
+  G.teamPrincipal = { ...staffData };
+  addNotification(`Hired ${staffData.name} as Team Principal!`, 'success');
+  return { ok: true };
+}
+
+function fireTP() {
+  if (!G.teamPrincipal) return { ok: false, msg: 'No Team Principal to fire.' };
+  const name = G.teamPrincipal.name;
+  G.teamPrincipal = null;
+  addNotification(`${name} stepped down as Team Principal.`, 'info');
+  return { ok: true };
+}
+
+function hireRE(carId, staffData) {
+  if (!G.raceEngineers) G.raceEngineers = {};
+  if (G.raceEngineers[carId]) {
+    const existingTierDef = RE_TIERS[G.raceEngineers[carId].tier];
+    const buyout = Math.floor(existingTierDef.hireCost * 0.25);
+    if (G.money < buyout) return { ok: false, msg: `Buying out current RE costs $${formatNumber(buyout)}.` };
+    G.money -= buyout;
+    addNotification(`Bought out ${G.raceEngineers[carId].name} for $${formatNumber(buyout)}.`, 'info');
+  }
+  const tierDef = RE_TIERS[staffData.tier];
+  if (tierDef.hireCost > 0) {
+    if (G.money < tierDef.hireCost) return { ok: false, msg: 'Not enough money.' };
+    G.money -= tierDef.hireCost;
+  }
+  G.raceEngineers[carId] = { ...staffData };
+  const car = G.cars.find(c => c.id === carId);
+  addNotification(`Hired ${staffData.name} as Race Engineer for ${car ? car.name : carId}.`, 'success');
+  return { ok: true };
+}
+
+function fireRE(carId) {
+  if (!G.raceEngineers || !G.raceEngineers[carId]) return { ok: false, msg: 'No Race Engineer to fire.' };
+  const name = G.raceEngineers[carId].name;
+  delete G.raceEngineers[carId];
+  addNotification(`${name} left the engineering team.`, 'info');
+  return { ok: true };
+}
+
+function deductSeasonSalaries() {
+  let total = 0;
+  if (G.teamPrincipal) total += G.teamPrincipal.salary;
+  if (G.raceEngineers) Object.values(G.raceEngineers).forEach(re => { total += re.salary; });
+  if (total > 0) {
+    G.money -= total;
+    addNotification(`Season ${G.season} staff salaries: -$${formatNumber(total)}`, 'info');
+  }
+}
+
+function _migrateStaff() {
+  if (!G.teamPrincipal) G.teamPrincipal = null;
+  if (!G.raceEngineers || typeof G.raceEngineers !== 'object' || Array.isArray(G.raceEngineers)) {
+    G.raceEngineers = {};
+  }
+  // Remove RE entries for cars that no longer exist
+  Object.keys(G.raceEngineers).forEach(carId => {
+    if (!G.cars.find(c => c.id === carId)) delete G.raceEngineers[carId];
+  });
+}
+
 // ─── Season Reset (Prestige) ─────────────────────────────────────────────────
 
 function canPrestige() {
@@ -527,6 +699,7 @@ function doPrestige() {
   G.prestigePoints += ppGain;
   G.season++;
   G.money = 5000;
+  deductSeasonSalaries();
 
   const headStart = G.prestige.permanentBonuses.headStartLevels;
 
@@ -567,9 +740,12 @@ function tick(deltaMs) {
   G.money += income;
   G.totalEarned += income;
 
-  // Driver XP (passive growth)
+  // Driver XP (passive growth, boosted by RE driverCoach)
   G.drivers.forEach(d => {
-    if (d.carId) d.xp += deltaSec * 0.1;
+    if (d.carId) {
+      const coachBonus = getREBonuses(d.carId).coachBonus;
+      d.xp += deltaSec * 0.1 * (1 + coachBonus);
+    }
   });
 
   // Championship round progression
@@ -578,9 +754,10 @@ function tick(deltaMs) {
     const elapsed = (now - entry.roundStartTime) / 1000;
     if (elapsed >= entry.roundDurationSec) {
       const champDef = getChampionshipById(entry.definitionId);
+      const strategyRep = getTPBonuses().strategyRep;
       entry.currentRound++;
-      entry.repEarned += champDef.repPerRound;
-      G.reputation += champDef.repPerRound;
+      entry.repEarned += champDef.repPerRound + strategyRep;
+      G.reputation += champDef.repPerRound + strategyRep;
       entry.roundStartTime = now;
 
       const isFinal = entry.currentRound >= entry.maxRounds;
@@ -588,7 +765,8 @@ function tick(deltaMs) {
         // Final round bonus
         const car = G.cars.find(c => c.id === entry.carId);
         const champIncomePerSec = car ? calcCarIncomePerSec(car) : 0;
-        const bonusCash = champIncomePerSec * entry.roundDurationSec * champDef.finalBonusMult;
+        const dataBonus = getREBonuses(entry.carId).dataBonus;
+        const bonusCash = champIncomePerSec * entry.roundDurationSec * champDef.finalBonusMult * (1 + dataBonus);
         G.money += bonusCash;
         G.totalEarned += bonusCash;
 
@@ -692,6 +870,7 @@ function loadGame() {
     G = Object.assign(createDefaultState(), saved);
     _migrateDriverStats();
     _migrateSponsors();
+    _migrateStaff();
     return true;
   } catch (e) {
     console.warn('Load failed:', e);
