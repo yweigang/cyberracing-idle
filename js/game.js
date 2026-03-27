@@ -35,8 +35,11 @@ function createDefaultState() {
     activeChampionships: [],
     completedChampionships: [],
     champCompletions: {},      // { champId: totalCount } — persists across season resets
+    seasonEndCount: 0,         // increments each time endSeason() is called
     prestige: {
       totalResets: 0,
+      prestigeCount: 0,        // increments each time doPrestige() is called
+      lastPrestigeSeason: 0,   // G.season value at last prestige (for PP calculation)
       permanentBonuses: {
         incomeMultiplier: 1.0,
         sponsorBonus: 0,
@@ -306,6 +309,7 @@ function scoutDriver(tier) {
     fitness:        stats.fitness,
     primaryStat,
     xp: 0,
+    age: 20,
     carId: null,
   };
   G.drivers.push(driver);
@@ -664,6 +668,22 @@ function deductSeasonSalaries() {
   }
 }
 
+// Backfill driver age for saves predating the age field
+function _migrateDriverAge() {
+  G.drivers.forEach(d => {
+    if (d.age === undefined) d.age = 20;
+  });
+}
+
+// Ensure season/prestige tracking fields exist on old saves
+function _migratePrestige() {
+  if (G.seasonEndCount === undefined) G.seasonEndCount = 0;
+  if (!G.prestige) G.prestige = createDefaultState().prestige;
+  if (G.prestige.prestigeCount   === undefined) G.prestige.prestigeCount   = 0;
+  if (G.prestige.lastPrestigeSeason === undefined) G.prestige.lastPrestigeSeason = 0;
+  _migrateDriverAge();
+}
+
 function _migrateStaff() {
   if (!G.teamPrincipal) G.teamPrincipal = null;
   if (!G.raceEngineers || typeof G.raceEngineers !== 'object' || Array.isArray(G.raceEngineers)) {
@@ -675,35 +695,82 @@ function _migrateStaff() {
   });
 }
 
-// ─── Season Reset (Prestige) ─────────────────────────────────────────────────
+// ─── End Season ───────────────────────────────────────────────────────────────
 
-function canPrestige() {
-  // Must have completed at least one championship this season
+function canEndSeason() {
   return G.completedChampionships.some(c => c.season === G.season);
 }
 
+function endSeason() {
+  if (!canEndSeason()) return { ok: false, msg: 'Complete at least one championship first.' };
+
+  // 1. Evaluate all active sponsor contracts
+  evaluateSponsorsAtSeasonEnd();
+
+  // 2. Deduct staff salaries
+  deductSeasonSalaries();
+
+  // 3. Age all currently assigned drivers by 1
+  G.drivers.forEach(d => {
+    if (d.carId !== null) d.age = (d.age || 20) + 1;
+  });
+
+  // 4. Award license XP to drivers based on championships completed this season
+  G.completedChampionships
+    .filter(c => c.season === G.season)
+    .forEach(comp => {
+      const car = G.cars.find(c => c.id === comp.carId);
+      if (car && car.driverId) {
+        const driver = G.drivers.find(d => d.id === car.driverId);
+        if (driver) driver.xp += 100;
+      }
+    });
+
+  // 5. Abandon all in-progress championships
+  G.activeChampionships.forEach(entry => {
+    const car = G.cars.find(c => c.id === entry.carId);
+    if (car) car.championshipId = null;
+  });
+  G.activeChampionships = [];
+
+  // 6 & 7. Increment season; "completed this season" is implicit via season field
+  G.season++;
+  G.seasonEndCount = (G.seasonEndCount || 0) + 1;
+
+  addNotification(`Season ${G.season - 1} ended. Season ${G.season} begins!`, 'success');
+  return { ok: true };
+}
+
+// ─── Prestige ─────────────────────────────────────────────────────────────────
+
+// Requires at least one season to have been ended since the last prestige.
+function canPrestige() {
+  return (G.seasonEndCount || 0) > (G.prestige.prestigeCount || 0);
+}
+
 function calcPrestigePoints() {
-  // Award PP based on reputation milestones and championships completed
-  const repPP = Math.floor(G.reputation / 1000);
-  const champPP = G.completedChampionships.filter(c => c.season === G.season).length * 10;
+  // Count completions across all seasons since last prestige (not including current season)
+  const lastP = G.prestige.lastPrestigeSeason || 0;
+  const repPP  = Math.floor(G.reputation / 1000);
+  const champPP = G.completedChampionships.filter(c => c.season > lastP && c.season < G.season).length * 10;
   return repPP + champPP;
 }
 
 function doPrestige() {
-  if (!canPrestige()) return { ok: false, msg: 'Complete at least one championship first.' };
-
-  // Evaluate sponsor contracts before the season increments
-  evaluateSponsorsAtSeasonEnd();
+  if (!canPrestige()) return { ok: false, msg: 'End at least one season first.' };
 
   const ppGain = calcPrestigePoints();
   G.prestigePoints += ppGain;
-  G.season++;
+  G.prestige.lastPrestigeSeason = G.season - 1; // last ended season
+  G.prestige.prestigeCount = (G.prestige.prestigeCount || 0) + 1;
+  G.prestige.totalResets++;
+
+  // Reset money
   G.money = 5000;
-  deductSeasonSalaries();
 
-  const headStart = G.prestige.permanentBonuses.headStartLevels;
+  const headStart = G.prestige.permanentBonuses.headStartLevels || 0;
 
-  // Reset cars (keep 2 reliability levels, add head-start levels)
+  // Reset car upgrades (keep 2 reliability levels, add head-start levels)
   G.cars.forEach(car => {
     const relLvl = car.upgrades.reliability;
     car.upgrades = { engine: headStart, aero: headStart, tyres: headStart, brakes: headStart, reliability: Math.min(2 + headStart, 20) };
@@ -711,15 +778,18 @@ function doPrestige() {
     car.championshipId = null;
   });
 
-  // Clear championships
+  // Clear any lingering active championships (safety net)
+  G.activeChampionships.forEach(entry => {
+    const car = G.cars.find(c => c.id === entry.carId);
+    if (car) car.championshipId = null;
+  });
   G.activeChampionships = [];
 
-  // Driver XP persists; unassign for clarity
+  // Unassign drivers (XP and age persist)
   G.drivers.forEach(d => { d.carId = null; });
   G.cars.forEach(c => { c.driverId = null; });
 
-  addNotification(`Season ${G.season - 1} complete! +${ppGain} Prestige Points.`, 'prestige');
-
+  addNotification(`Prestige! +${ppGain} PP. Money and upgrades reset.`, 'prestige');
   return { ok: true, ppGain };
 }
 
@@ -871,6 +941,7 @@ function loadGame() {
     _migrateDriverStats();
     _migrateSponsors();
     _migrateStaff();
+    _migratePrestige();
     return true;
   } catch (e) {
     console.warn('Load failed:', e);

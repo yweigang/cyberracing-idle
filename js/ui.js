@@ -12,14 +12,16 @@ let _hiringTP = false;
 let _tpCandidates = [];
 let _hiringRECarId = null;     // carId being hired for, or null
 let _reCandidates = [];
+let _confirmingEndSeason = false;
 
 // ─── Tab Navigation ───────────────────────────────────────────────────────────
 
 function switchTab(tabId) {
   _activeTab = tabId;
-  // Clear staff hiring state on tab switch
+  // Clear transient state on tab switch
   _hiringTP = false; _tpCandidates = [];
   _hiringRECarId = null; _reCandidates = [];
+  _confirmingEndSeason = false;
   document.querySelectorAll('.tab-btn').forEach(btn => {
     btn.classList.toggle('active', btn.dataset.tab === tabId);
   });
@@ -992,11 +994,120 @@ function renderStaff() {
 
 function renderPrestige() {
   const container = document.getElementById('panel-prestige');
-  container.innerHTML = `<div class="wip-screen">
-    <div class="wip-icon">🚧</div>
-    <div class="wip-title">Work in Progress</div>
-    <div class="wip-desc">The Prestige system is coming in a future update.</div>
-  </div>`;
+  const canEnd = canEndSeason();
+
+  // ── Season summary
+  const completedThisSeason = G.completedChampionships.filter(c => c.season === G.season);
+  const abandonList = G.activeChampionships.map(e => {
+    const def = getChampionshipById(e.definitionId);
+    const car = G.cars.find(c => c.id === e.carId);
+    return `${def ? def.shortName : e.definitionId} — ${car ? car.name : 'unknown'} (Round ${e.currentRound + 1}/${e.maxRounds})`;
+  });
+  const assignedDrivers = G.drivers.filter(d => d.carId !== null);
+  let totalSalary = G.teamPrincipal ? (G.teamPrincipal.salary || 0) : 0;
+  if (G.raceEngineers) Object.values(G.raceEngineers).forEach(re => { totalSalary += re.salary || 0; });
+
+  // ── End Season section
+  let html = `<div class="section-header">END SEASON</div>`;
+
+  if (_confirmingEndSeason) {
+    // Confirmation panel
+    let confirmRows = `
+      <div class="confirm-row">
+        <span class="confirm-label">Championships completed</span>
+        <span class="confirm-value ok">${completedThisSeason.length}</span>
+      </div>`;
+
+    if (abandonList.length > 0) {
+      confirmRows += `
+        <div class="confirm-row">
+          <span class="confirm-label">Will be abandoned</span>
+          <span class="confirm-value warn">${abandonList.length} championship${abandonList.length !== 1 ? 's' : ''}</span>
+        </div>
+        <div class="confirm-abandon-list">${abandonList.map(s => `<div class="confirm-abandon-item">✕ ${s}</div>`).join('')}</div>`;
+    } else {
+      confirmRows += `
+        <div class="confirm-row">
+          <span class="confirm-label">Abandoned championships</span>
+          <span class="confirm-value">None</span>
+        </div>`;
+    }
+
+    confirmRows += `
+      <div class="confirm-row">
+        <span class="confirm-label">Staff salaries deducted</span>
+        <span class="confirm-value ${totalSalary > 0 ? 'warn' : ''}">${totalSalary > 0 ? '-$' + formatNumber(totalSalary) : 'None'}</span>
+      </div>
+      <div class="confirm-row">
+        <span class="confirm-label">Driver aging</span>
+        <span class="confirm-value">${assignedDrivers.length > 0 ? `${assignedDrivers.length} assigned driver${assignedDrivers.length !== 1 ? 's' : ''} age +1` : 'No assigned drivers'}</span>
+      </div>`;
+
+    html += `
+      <div class="end-season-confirm">
+        <div class="confirm-title">Confirm End Season ${G.season}?</div>
+        <div class="confirm-details">${confirmRows}</div>
+        <div class="confirm-actions">
+          <button class="btn btn-danger" id="confirm-end-season-btn">End Season ${G.season}</button>
+          <button class="btn" id="cancel-end-season-btn">Cancel</button>
+        </div>
+      </div>`;
+  } else {
+    // Normal state
+    const endSeasonTooltip = canEnd ? '' : 'title="Complete at least one championship first"';
+    html += `
+      <div class="end-season-bar">
+        <div class="end-season-info">
+          <div class="end-season-label">Season ${G.season}</div>
+          <div class="end-season-sub">${completedThisSeason.length} championship${completedThisSeason.length !== 1 ? 's' : ''} completed this season${abandonList.length > 0 ? ` · ${abandonList.length} in progress` : ''}</div>
+        </div>
+        <button class="btn end-season-btn ${canEnd ? '' : 'disabled'}"
+          id="open-end-season-btn" ${canEnd ? '' : 'disabled'} ${endSeasonTooltip}>
+          End Season
+        </button>
+      </div>`;
+  }
+
+  // ── Prestige section — disabled / WIP
+  html += `
+    <div class="section-header">PRESTIGE RESET</div>
+    <div class="wip-screen">
+      <div class="wip-icon">🚧</div>
+      <div class="wip-title">Coming Soon</div>
+      <div class="wip-desc">Prestige resets are not yet available. Focus on building up your season results for now.</div>
+    </div>`;
+
+  container.innerHTML = html;
+
+  // Events — open confirmation
+  const openBtn = container.querySelector('#open-end-season-btn');
+  if (openBtn) {
+    openBtn.addEventListener('click', () => {
+      _confirmingEndSeason = true;
+      renderPrestige();
+    });
+  }
+
+  // Events — confirm end season
+  const confirmBtn = container.querySelector('#confirm-end-season-btn');
+  if (confirmBtn) {
+    confirmBtn.addEventListener('click', () => {
+      const result = endSeason();
+      _confirmingEndSeason = false;
+      if (!result.ok) addNotification(result.msg, 'error');
+      renderPrestige();
+    });
+  }
+
+  // Events — cancel
+  const cancelBtn = container.querySelector('#cancel-end-season-btn');
+  if (cancelBtn) {
+    cancelBtn.addEventListener('click', () => {
+      _confirmingEndSeason = false;
+      renderPrestige();
+    });
+  }
+
 }
 
 // ─── Fast UI Refresh (HUD only — no DOM reconstruction) ─────────────────────
