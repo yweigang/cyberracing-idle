@@ -298,6 +298,10 @@ function scoutDriver(tier) {
   const { stats, primaryStat } = generateDriverStats(tier, Math.random);
   const name = DRIVER_NAMES[Math.floor(Math.random() * DRIVER_NAMES.length)];
 
+  const ageRange = DRIVER_AGE_RANGES[tier] || { min: 18, max: 35 };
+  const age = ageRange.min + Math.floor(Math.random() * (ageRange.max - ageRange.min + 1));
+  const retirementAge = 41 + Math.floor(Math.random() * 5); // 41–45
+
   const driver = {
     id: 'driver_' + G.nextDriverId++,
     name,
@@ -309,7 +313,8 @@ function scoutDriver(tier) {
     fitness:        stats.fitness,
     primaryStat,
     xp: 0,
-    age: 20,
+    age,
+    retirementAge,
     carId: null,
   };
   G.drivers.push(driver);
@@ -658,6 +663,31 @@ function fireRE(carId) {
   return { ok: true };
 }
 
+// Apply stat growth/decline based on driver's career stage after aging
+function _applyDriverSeasonAging(driver) {
+  const stage = getCareerStage(driver.age);
+  const cfg   = DRIVER_STAT_CONFIG[driver.tier];
+  if (!cfg) return;
+
+  if (stage.id === 'rising') {
+    DRIVER_STAT_KEYS.forEach(k => {
+      driver[k] = Math.min(cfg.ceiling, Math.ceil(driver[k] * 1.08));
+    });
+  } else if (stage.id === 'prime') {
+    DRIVER_STAT_KEYS.forEach(k => {
+      driver[k] = Math.min(cfg.ceiling, Math.ceil(driver[k] * 1.02));
+    });
+  } else if (stage.id === 'late') {
+    driver.pace    = Math.max(1, driver.pace    - 1);
+    driver.fitness = Math.max(1, driver.fitness - 1);
+  } else if (stage.id === 'retirement') {
+    driver.pace        = Math.max(1, driver.pace        - 2);
+    driver.fitness     = Math.max(1, driver.fitness     - 1);
+    driver.consistency = Math.max(1, driver.consistency - 1);
+  }
+  // junior / veteran: no stat change
+}
+
 function deductSeasonSalaries() {
   let total = 0;
   if (G.teamPrincipal) total += G.teamPrincipal.salary;
@@ -668,10 +698,20 @@ function deductSeasonSalaries() {
   }
 }
 
-// Backfill driver age for saves predating the age field
+// Backfill driver age and retirementAge for saves predating these fields
 function _migrateDriverAge() {
   G.drivers.forEach(d => {
-    if (d.age === undefined) d.age = 20;
+    if (d.age === undefined) {
+      const seed = parseInt(d.id.replace('driver_', ''), 10) || 1;
+      const rand = seededRand(seed);
+      const range = DRIVER_AGE_RANGES[d.tier] || { min: 18, max: 35 };
+      d.age = range.min + Math.floor(rand() * (range.max - range.min + 1));
+    }
+    if (d.retirementAge === undefined) {
+      const seed = parseInt(d.id.replace('driver_', ''), 10) || 1;
+      const rand = seededRand(seed + 5000);
+      d.retirementAge = 41 + Math.floor(rand() * 5);
+    }
   });
 }
 
@@ -710,9 +750,48 @@ function endSeason() {
   // 2. Deduct staff salaries
   deductSeasonSalaries();
 
-  // 3. Age all currently assigned drivers by 1
+  // 3. Age all drivers, apply career stat changes, handle retirements
+  // Snapshot stats before changes so we can return a diff for the UI
+  const snapshots = G.drivers.map(d => ({
+    id: d.id, name: d.name,
+    ageBefore: d.age || 20,
+    statsBefore: DRIVER_STAT_KEYS.reduce((o, k) => { o[k] = d[k]; return o; }, {}),
+  }));
+
+  const retirees = [];
   G.drivers.forEach(d => {
-    if (d.carId !== null) d.age = (d.age || 20) + 1;
+    d.age = (d.age || 20) + 1;
+    if (d.age === 40) addNotification(`${d.name} is in their final seasons.`, 'warning');
+    _applyDriverSeasonAging(d);
+    if (d.age >= (d.retirementAge || 43)) retirees.push(d.id);
+  });
+
+  // Build driver change records before retirements remove drivers
+  const driverChanges = snapshots.map(snap => {
+    const d = G.drivers.find(x => x.id === snap.id);
+    const ageAfter = snap.ageBefore + 1;
+    if (!d || retirees.includes(snap.id)) {
+      return { name: snap.name, ageBefore: snap.ageBefore, ageAfter, retired: true, changes: {} };
+    }
+    const changes = {};
+    DRIVER_STAT_KEYS.forEach(k => {
+      const diff = d[k] - snap.statsBefore[k];
+      if (diff !== 0) changes[k] = diff;
+    });
+    return { name: snap.name, ageBefore: snap.ageBefore, ageAfter, stage: getCareerStage(ageAfter), retired: false, changes };
+  });
+
+  // Auto-retire queued drivers
+  retirees.forEach(driverId => {
+    const d = G.drivers.find(x => x.id === driverId);
+    if (!d) return;
+    addNotification(`${d.name} has retired aged ${d.age}.`, 'info');
+    if (d.carId) {
+      const car = G.cars.find(c => c.id === d.carId);
+      if (car) car.driverId = null;
+      d.carId = null;
+    }
+    G.drivers.splice(G.drivers.findIndex(x => x.id === driverId), 1);
   });
 
   // 4. Award license XP to drivers based on championships completed this season
@@ -733,12 +812,12 @@ function endSeason() {
   });
   G.activeChampionships = [];
 
-  // 6 & 7. Increment season; "completed this season" is implicit via season field
+  // 6 & 7. Increment season
   G.season++;
   G.seasonEndCount = (G.seasonEndCount || 0) + 1;
 
   addNotification(`Season ${G.season - 1} ended. Season ${G.season} begins!`, 'success');
-  return { ok: true };
+  return { ok: true, driverChanges };
 }
 
 // ─── Prestige ─────────────────────────────────────────────────────────────────

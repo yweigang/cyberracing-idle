@@ -13,6 +13,8 @@ let _tpCandidates = [];
 let _hiringRECarId = null;     // carId being hired for, or null
 let _reCandidates = [];
 let _confirmingEndSeason = false;
+let _seasonSummary = null; // driverChanges array from last endSeason()
+let _confirmingReset = false;
 
 // ─── Tab Navigation ───────────────────────────────────────────────────────────
 
@@ -22,6 +24,8 @@ function switchTab(tabId) {
   _hiringTP = false; _tpCandidates = [];
   _hiringRECarId = null; _reCandidates = [];
   _confirmingEndSeason = false;
+  _seasonSummary = null;
+  _confirmingReset = false;
   document.querySelectorAll('.tab-btn').forEach(btn => {
     btn.classList.toggle('active', btn.dataset.tab === tabId);
   });
@@ -125,7 +129,6 @@ function renderGarage() {
       <div class="buy-car-card ${locked ? 'locked' : ''}" style="--cls-color: ${cls.color}">
         <div class="cls-tier">Tier ${cls.tier}</div>
         <div class="cls-name" style="color: ${cls.color}">${cls.name}</div>
-        <div class="cls-income">$${formatNumber(cls.baseIncomePerLap / cls.lapTimeSec)}/s base</div>
         <div class="cls-owned" data-live-owned="${cls.id}">${owned}/${cls.maxOwned}</div>
         ${lockMsg ? `<div class="cls-lock">${lockMsg}</div>` : ''}
         <button class="btn buy-car-btn ${canBuy ? '' : 'disabled'}"
@@ -214,7 +217,12 @@ function renderGarage() {
           </div>
           <div class="car-meta">
             <span class="meta-pill ${driver ? 'has-driver' : ''}">
-              ${driver ? '🏎 ' + driver.name + ' (Pace ' + driver.pace + ')' : '⚡ No Driver'}
+              ${driver
+                ? (() => {
+                    const s = getCareerStage(driver.age || 20);
+                    return `🏎 ${driver.name} · <span style="color:${s.color}">${s.label} ${s.trajectory}</span> · Pace ${driver.pace}`;
+                  })()
+                : '⚡ No Driver'}
             </span>
             <span class="meta-pill ${activeChamp ? 'in-champ' : ''}">
               ${activeChamp ? '🏁 ' + champDef.shortName + ' R' + activeChamp.currentRound + '/' + activeChamp.maxRounds : '◯ No Championship'}
@@ -440,6 +448,12 @@ function renderDrivers() {
     rosterHtml += '<div class="driver-list">';
     G.drivers.forEach(driver => {
       const tierDef = DRIVER_TIERS[driver.tier];
+      const stage   = getCareerStage(driver.age || 20);
+      const age     = driver.age || 20;
+      const retAge  = driver.retirementAge || 43;
+      const retiringLabel = age >= 40 ? null
+        : age >= 38 ? 'Retiring soon'
+        : null;
 
       // Build 5-stat block
       const statsHtml = DRIVER_STAT_KEYS.map(key => {
@@ -456,15 +470,21 @@ function renderDrivers() {
       const primaryLabel = DRIVER_STAT_LABELS[driver.primaryStat] || driver.primaryStat;
 
       rosterHtml += `
-        <div class="driver-card">
+        <div class="driver-card ${age >= 38 ? 'driver-retiring' : ''}">
           <div class="driver-info">
             <div class="driver-name">${driver.name}</div>
             <div class="driver-tier" style="color: ${tierDef.color}">${tierDef.name}</div>
             <div class="driver-primary-badge" style="color: ${tierDef.color}">★ ${primaryLabel}</div>
+            <div class="driver-career-row">
+              <span class="driver-age">Age ${age}</span>
+              <span class="driver-stage-badge" style="color:${stage.color};border-color:${stage.color}">${stage.label} ${stage.trajectory}</span>
+              ${retiringLabel ? `<span class="driver-retiring-badge">${retiringLabel}</span>` : ''}
+            </div>
           </div>
           <div class="driver-stats-grid">${statsHtml}</div>
           <div class="driver-meta">
             <span class="driver-xp">XP ${Math.floor(driver.xp)}</span>
+            <span class="driver-ret-age">Retires ~${retAge}</span>
           </div>
           <div class="driver-assign">
             <select class="assign-car-select" data-driver="${driver.id}">
@@ -1003,7 +1023,7 @@ function renderPrestige() {
     const car = G.cars.find(c => c.id === e.carId);
     return `${def ? def.shortName : e.definitionId} — ${car ? car.name : 'unknown'} (Round ${e.currentRound + 1}/${e.maxRounds})`;
   });
-  const assignedDrivers = G.drivers.filter(d => d.carId !== null);
+  const driverCount = G.drivers.length;
   let totalSalary = G.teamPrincipal ? (G.teamPrincipal.salary || 0) : 0;
   if (G.raceEngineers) Object.values(G.raceEngineers).forEach(re => { totalSalary += re.salary || 0; });
 
@@ -1040,7 +1060,7 @@ function renderPrestige() {
       </div>
       <div class="confirm-row">
         <span class="confirm-label">Driver aging</span>
-        <span class="confirm-value">${assignedDrivers.length > 0 ? `${assignedDrivers.length} assigned driver${assignedDrivers.length !== 1 ? 's' : ''} age +1` : 'No assigned drivers'}</span>
+        <span class="confirm-value">${driverCount > 0 ? `${driverCount} driver${driverCount !== 1 ? 's' : ''} age +1` : 'No drivers'}</span>
       </div>`;
 
     html += `
@@ -1068,6 +1088,44 @@ function renderPrestige() {
       </div>`;
   }
 
+  // ── Driver season summary (shown after end season)
+  if (_seasonSummary && _seasonSummary.length > 0) {
+    html += `<div class="section-header">DRIVER CHANGES — SEASON ${G.season - 1}</div>
+      <div class="season-driver-summary">`;
+
+    _seasonSummary.forEach(rec => {
+      if (rec.retired) {
+        html += `
+          <div class="sds-row sds-retired">
+            <span class="sds-name">${rec.name}</span>
+            <span class="sds-age">${rec.ageBefore} → ${rec.ageAfter}</span>
+            <span class="sds-stage" style="color:var(--red)">Retired</span>
+          </div>`;
+        return;
+      }
+
+      const stageLbl = rec.stage ? `${rec.stage.label} ${rec.stage.trajectory}` : '';
+      const stageColor = rec.stage ? rec.stage.color : 'var(--text-2)';
+      const statPills = DRIVER_STAT_KEYS.map(k => {
+        const d = rec.changes[k];
+        if (!d) return '';
+        const sign = d > 0 ? '+' : '';
+        const cls  = d > 0 ? 'sds-up' : 'sds-down';
+        return `<span class="sds-stat ${cls}">${DRIVER_STAT_LABELS[k]} ${sign}${d}</span>`;
+      }).filter(Boolean).join('');
+
+      html += `
+        <div class="sds-row">
+          <span class="sds-name">${rec.name}</span>
+          <span class="sds-age">${rec.ageBefore} → ${rec.ageAfter}</span>
+          <span class="sds-stage" style="color:${stageColor}">${stageLbl}</span>
+          <span class="sds-stats">${statPills || '<span class="sds-nochange">No change</span>'}</span>
+        </div>`;
+    });
+
+    html += `</div>`;
+  }
+
   // ── Prestige section — disabled / WIP
   html += `
     <div class="section-header">PRESTIGE RESET</div>
@@ -1076,6 +1134,28 @@ function renderPrestige() {
       <div class="wip-title">Coming Soon</div>
       <div class="wip-desc">Prestige resets are not yet available. Focus on building up your season results for now.</div>
     </div>`;
+
+  // ── Hard Reset section
+  html += `<div class="section-header">DANGER ZONE</div>`;
+  if (_confirmingReset) {
+    html += `
+      <div class="hard-reset-confirm">
+        <div class="hard-reset-warning">This will permanently delete all progress. There is no undo.</div>
+        <div class="confirm-actions">
+          <button class="btn btn-danger" id="do-hard-reset-btn">Yes, wipe everything</button>
+          <button class="btn" id="cancel-hard-reset-btn">Cancel</button>
+        </div>
+      </div>`;
+  } else {
+    html += `
+      <div class="hard-reset-bar">
+        <div class="hard-reset-info">
+          <div class="hard-reset-label">Hard Reset</div>
+          <div class="hard-reset-sub">Delete all save data and start over from scratch.</div>
+        </div>
+        <button class="btn btn-danger" id="open-hard-reset-btn">Hard Reset</button>
+      </div>`;
+  }
 
   container.innerHTML = html;
 
@@ -1094,16 +1174,44 @@ function renderPrestige() {
     confirmBtn.addEventListener('click', () => {
       const result = endSeason();
       _confirmingEndSeason = false;
-      if (!result.ok) addNotification(result.msg, 'error');
+      if (!result.ok) { addNotification(result.msg, 'error'); }
+      else { _seasonSummary = result.driverChanges; }
       renderPrestige();
     });
   }
 
-  // Events — cancel
+  // Events — cancel end season
   const cancelBtn = container.querySelector('#cancel-end-season-btn');
   if (cancelBtn) {
     cancelBtn.addEventListener('click', () => {
       _confirmingEndSeason = false;
+      renderPrestige();
+    });
+  }
+
+  // Events — hard reset
+  const openResetBtn = container.querySelector('#open-hard-reset-btn');
+  if (openResetBtn) {
+    openResetBtn.addEventListener('click', () => {
+      _confirmingReset = true;
+      renderPrestige();
+    });
+  }
+
+  const doResetBtn = container.querySelector('#do-hard-reset-btn');
+  if (doResetBtn) {
+    doResetBtn.addEventListener('click', () => {
+      resetGame();
+      _confirmingReset = false;
+      _seasonSummary = null;
+      switchTab('garage');
+    });
+  }
+
+  const cancelResetBtn = container.querySelector('#cancel-hard-reset-btn');
+  if (cancelResetBtn) {
+    cancelResetBtn.addEventListener('click', () => {
+      _confirmingReset = false;
       renderPrestige();
     });
   }

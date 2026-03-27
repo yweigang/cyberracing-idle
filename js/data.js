@@ -286,6 +286,30 @@ const DRIVER_STAT_LABELS = {
   fitness:        'Fitness',
 };
 
+// Starting age range when scouting a new driver
+const DRIVER_AGE_RANGES = {
+  C: { min: 18, max: 35 },
+  B: { min: 22, max: 40 },
+  A: { min: 20, max: 32 },
+  S: { min: 22, max: 30 },
+  L: { min: 25, max: 35 },
+};
+
+// Career stages keyed by age bracket
+const CAREER_STAGES = [
+  { id: 'junior',     label: 'Junior',         color: '#4488ff', minAge: 14, maxAge: 17, trajectory: '↑' },
+  { id: 'rising',     label: 'Rising Star',     color: '#00ff88', minAge: 18, maxAge: 22, trajectory: '↑' },
+  { id: 'prime',      label: 'Prime',           color: '#ffd700', minAge: 23, maxAge: 28, trajectory: '↑' },
+  { id: 'veteran',    label: 'Veteran',         color: '#d8d8f0', minAge: 29, maxAge: 34, trajectory: '→' },
+  { id: 'late',       label: 'Late Career',     color: '#ff8800', minAge: 35, maxAge: 39, trajectory: '↓' },
+  { id: 'retirement', label: 'Retirement Zone', color: '#ff3355', minAge: 40, maxAge: 999, trajectory: '↓' },
+];
+
+function getCareerStage(age) {
+  return CAREER_STAGES.find(s => age >= s.minAge && age <= s.maxAge)
+    || CAREER_STAGES[CAREER_STAGES.length - 1];
+}
+
 const DRIVER_NAMES = [
   'Alex Mercer', 'Jordan Kane', 'Nico Voss', 'Lena Carver', 'Riku Tanaka',
   'Sara Blaine', 'Theo Marsh', 'Dani Reyes', 'Kira Stone', 'Oscar Flynn',
