@@ -110,6 +110,7 @@ function renderGarage() {
   // ── Buy car section
   let buyCarsHtml = '<div class="section-header">BUY CAR</div><div class="buy-cars-grid">';
   CAR_CLASSES.forEach(cls => {
+    if (cls.pathway === 'single_seater' && !isSingleSeaterUnlocked()) return;
     const owned      = G.cars.filter(c => c.classId === cls.id).length;
     const repOk      = G.reputation >= cls.repRequired;
     const ppOk       = cls.ppRequired === 0 || G.prestigePoints >= cls.ppRequired;
@@ -293,6 +294,10 @@ function renderChampionships() {
       const elapsed = (now - entry.roundStartTime) / 1000;
       const roundPct = Math.min(100, (elapsed / entry.roundDurationSec) * 100);
       const remaining = Math.max(0, entry.roundDurationSec - elapsed);
+      const isFinalRound = entry.currentRound + 1 >= entry.maxRounds;
+      const timerText = remaining <= 0
+        ? (isFinalRound ? 'Championship finishing…' : 'Round finishing…')
+        : (isFinalRound ? `Final round ends in ${formatTime(remaining)}` : `Next round in ${formatTime(remaining)}`);
 
       activeHtml += `
         <div class="champ-active-card" data-entry="${entry.id}" style="--cls-color: ${champDef.color}">
@@ -307,7 +312,7 @@ function renderChampionships() {
             <div class="round-progress-bar" style="width: ${roundPct}%"></div>
           </div>
           <div class="champ-footer">
-            <span data-live-timer>Next round in ${formatTime(remaining)}</span>
+            <span data-live-timer>${timerText}</span>
             <span>+${formatNumber(entry.repEarned)} REP earned</span>
             <button class="btn btn-danger withdraw-btn" data-entry="${entry.id}">Withdraw</button>
           </div>
@@ -335,6 +340,7 @@ function renderChampionships() {
 
   availHtml += '<div class="champ-grid">';
   CHAMPIONSHIPS.forEach(champDef => {
+    if (champDef.pathway === 'single_seater' && !isSingleSeaterUnlocked()) return;
     const repOk    = G.reputation >= (champDef.repRequired || 0);
     const prereqOk = checkChampionshipPrerequisite(champDef);
     const hardLocked = !repOk || !prereqOk;
@@ -1301,7 +1307,12 @@ function updateChampLive() {
     const bar = card.querySelector('.round-progress-bar');
     if (bar) bar.style.width = pct + '%';
     const timer = card.querySelector('[data-live-timer]');
-    if (timer) timer.textContent = 'Next round in ' + formatTime(remaining);
+    if (timer) {
+      const isFinalRound = entry.currentRound + 1 >= entry.maxRounds;
+      timer.textContent = remaining <= 0
+        ? (isFinalRound ? 'Championship finishing…' : 'Round finishing…')
+        : (isFinalRound ? `Final round ends in ${formatTime(remaining)}` : `Next round in ${formatTime(remaining)}`);
+    }
     const roundEl = card.querySelector('.champ-round');
     if (roundEl) roundEl.textContent = `Round ${entry.currentRound + 1}/${entry.maxRounds}`;
   });

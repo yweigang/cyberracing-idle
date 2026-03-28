@@ -132,11 +132,18 @@ function buyUpgrade(carId, upgradeId) {
   return { ok: true };
 }
 
+function isSingleSeaterUnlocked() {
+  return (G.prestige.prestigeCount || 0) >= 1;
+}
+
 // ─── Buy Car ──────────────────────────────────────────────────────────────────
 
 function buyCar(classId) {
   const cls = getCarClassById(classId);
   if (!cls) return { ok: false, msg: 'Unknown car class.' };
+  if (cls.pathway === 'single_seater' && !isSingleSeaterUnlocked()) {
+    return { ok: false, msg: 'Single-Seater Pathway not yet unlocked.' };
+  }
   if (G.reputation < cls.repRequired) return { ok: false, msg: `Need ${formatNumber(cls.repRequired)} REP.` };
   if (cls.ppRequired && G.prestigePoints < cls.ppRequired) return { ok: false, msg: `Need ${cls.ppRequired} PP.` };
 
@@ -193,6 +200,9 @@ function checkChampionshipPrerequisite(champDef) {
 function enterChampionship(definitionId, carId) {
   const champDef = getChampionshipById(definitionId);
   if (!champDef) return { ok: false, msg: 'Unknown championship.' };
+
+  if (champDef.pathway === 'single_seater' && !isSingleSeaterUnlocked())
+    return { ok: false, msg: 'Single-Seater Pathway not yet unlocked.' };
 
   if (G.reputation < (champDef.repRequired || 0))
     return { ok: false, msg: `Need ${formatNumber(champDef.repRequired)} REP to enter.` };
@@ -724,6 +734,15 @@ function _migratePrestige() {
   _migrateDriverAge();
 }
 
+// If a save has single-seater cars already (from before pathway gating), treat as unlocked
+function _migrateSingleSeater() {
+  const SINGLE_SEATER_IDS = ['F4', 'F3', 'F2', 'F1'];
+  const hasSingleSeaterCar = G.cars.some(c => SINGLE_SEATER_IDS.includes(c.classId));
+  if (hasSingleSeaterCar && (G.prestige.prestigeCount || 0) === 0) {
+    G.prestige.prestigeCount = 1;
+  }
+}
+
 function _migrateStaff() {
   if (!G.teamPrincipal) G.teamPrincipal = null;
   if (!G.raceEngineers || typeof G.raceEngineers !== 'object' || Array.isArray(G.raceEngineers)) {
@@ -841,8 +860,10 @@ function doPrestige() {
   const ppGain = calcPrestigePoints();
   G.prestigePoints += ppGain;
   G.prestige.lastPrestigeSeason = G.season - 1; // last ended season
-  G.prestige.prestigeCount = (G.prestige.prestigeCount || 0) + 1;
+  const prevPrestigeCount = G.prestige.prestigeCount || 0;
+  G.prestige.prestigeCount = prevPrestigeCount + 1;
   G.prestige.totalResets++;
+  const singleSeaterJustUnlocked = prevPrestigeCount === 0;
 
   // Reset money
   G.money = 5000;
@@ -869,7 +890,10 @@ function doPrestige() {
   G.cars.forEach(c => { c.driverId = null; });
 
   addNotification(`Prestige! +${ppGain} PP. Money and upgrades reset.`, 'prestige');
-  return { ok: true, ppGain };
+  if (singleSeaterJustUnlocked) {
+    addNotification('🏎️ Single-Seater Pathway Unlocked! F4 is now available.', 'prestige');
+  }
+  return { ok: true, ppGain, singleSeaterJustUnlocked };
 }
 
 // ─── Notifications ────────────────────────────────────────────────────────────
@@ -1021,6 +1045,7 @@ function loadGame() {
     _migrateSponsors();
     _migrateStaff();
     _migratePrestige();
+    _migrateSingleSeater();
     return true;
   } catch (e) {
     console.warn('Load failed:', e);
