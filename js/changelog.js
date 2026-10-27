@@ -4,6 +4,14 @@
 
 const CHANGELOG = [
   {
+    version: '0.5.1',
+    date: '2026-10-27',
+    title: 'Salary counter',
+    changes: [
+      'The header shows the salaries due at the end of the season. It turns red when your money does not cover them; hover it for the breakdown.',
+    ],
+  },
+  {
     version: '0.5.0',
     date: '2026-10-27',
     title: 'Player feedback round',

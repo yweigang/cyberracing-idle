@@ -1,5 +1,5 @@
 // Game release shown in the header; keep in step with js/changelog.js
-const GAME_VERSION = '0.5.0';
+const GAME_VERSION = '0.5.1';
 
 'use strict';
 

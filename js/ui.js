@@ -193,6 +193,7 @@ function updateCurrencyBar() {
   if (teamEl) teamEl.textContent = G.teamName || DEFAULT_TEAM_NAME;
   document.getElementById('hud-money').textContent = '$' + formatNumber(G.money);
   document.getElementById('hud-rep').textContent = formatNumber(G.reputation) + ' REP';
+  _updateSalaryHud();
   document.getElementById('hud-pp').textContent = G.prestigePoints + ' PP';
   const ipsEl = document.getElementById('hud-ips');
   const heldIps = calcSponsorHeldPerSec();
@@ -201,6 +202,28 @@ function updateCurrencyBar() {
     + (heldIps > 0 ? `\nHeld until targets are met: +$${formatNumber(heldIps)}/s` : '');
   document.getElementById('hud-season-label').textContent = 'Season ' + G.season;
   document.getElementById('hud-season').textContent = formatClock(getSeasonTimeLeft());
+}
+
+// Salaries due at season end, red when the money doesn't cover them, with a breakdown on hover
+function _updateSalaryHud() {
+  const el = document.getElementById('hud-salary');
+  const due = getSeasonSalaryTotal();
+  const short = due > G.money;
+  el.textContent = isSalaryFreeSeason() ? 'none' : '$' + formatNumber(due);
+  el.classList.toggle('short', short);
+  const rows = getPayroll();
+  const sum = kind => rows.filter(r => r.kind === kind).reduce((s, r) => s + r.salary, 0);
+  const count = kind => rows.filter(r => r.kind === kind).length;
+  const lines = isSalaryFreeSeason()
+    ? ['No salaries this season: the team is rebuilding after its reset.']
+    : [
+        `Paid when the season ends (in ${formatClock(getSeasonTimeLeft())})`,
+        sum('tp') ? `Team Principal: $${formatNumber(sum('tp'))}` : '',
+        count('re') ? `Race engineers (${count('re')}): $${formatNumber(sum('re'))}` : '',
+        count('driver') ? `Drivers (${count('driver')}): $${formatNumber(sum('driver'))}` : '',
+        short ? `$${formatNumber(due - G.money)} short: the best-paid people would leave unpaid.` : '',
+      ];
+  document.getElementById('hud-salary-stat').title = lines.filter(Boolean).join('\n');
 }
 
 // ─── Notifications ────────────────────────────────────────────────────────────

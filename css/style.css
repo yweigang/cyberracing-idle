@@ -141,6 +141,9 @@ select { font-family: inherit; }
 #hud-rep    { color: var(--cyan); }
 #hud-pp     { color: var(--gold); }
 #hud-ips    { color: var(--amber); }
+#hud-salary { color: var(--text-2); }
+#hud-salary.short { color: var(--red); }
+#hud-salary-stat { cursor: help; }
 
 /* ─── Tab Bar ────────────────────────────────────────────────────────────── */
 #tab-bar {
