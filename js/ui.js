@@ -12,6 +12,7 @@ let _tpCandidates = [];
 let _hiringRECarId = null;     // carId being hired for, or null
 let _reCandidates = [];
 let _confirmingReset = false;
+let _confirmSellCarId = null;
 
 // ─── Tab Navigation ───────────────────────────────────────────────────────────
 
@@ -206,6 +207,9 @@ function renderGarage() {
             <div class="car-stats-right">
               <div class="car-rating">★ ${rating}</div>
               <div class="car-mult">car ${baseRating} · driver ×${paceMult.toFixed(2)} · DNF ${dnfPct}%</div>
+              ${G.cars.length > 1 && !car.championshipId
+                ? `<button class="btn btn-danger sell-car-btn" data-car="${car.id}">${_confirmSellCarId === car.id ? 'Confirm sell' : 'Sell'} $${formatNumber(getCarSellValue(car))}</button>`
+                : ''}
             </div>
           </div>
           <div class="car-meta">
@@ -246,6 +250,20 @@ function renderGarage() {
     btn.addEventListener('click', () => {
       const result = buyCar(btn.dataset.class);
       if (!result.ok) addNotification(result.msg, 'error');
+      renderGarage();
+    });
+  });
+
+  // Sell buttons: first click arms, second click sells
+  container.querySelectorAll('.sell-car-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      if (_confirmSellCarId !== btn.dataset.car) {
+        _confirmSellCarId = btn.dataset.car;
+      } else {
+        const result = sellCar(btn.dataset.car);
+        if (!result.ok) addNotification(result.msg, 'error');
+        _confirmSellCarId = null;
+      }
       renderGarage();
     });
   });

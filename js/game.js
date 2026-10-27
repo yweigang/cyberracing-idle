@@ -161,7 +161,9 @@ function buyCar(classId) {
 
   G.money -= cls.baseCost;
   const id = 'car_' + G.nextCarId++;
-  const count = ownedOfClass + 1;
+  // First free number, so names stay unique after selling
+  let count = 1;
+  while (G.cars.some(c => c.name === `${cls.name} #${count}`)) count++;
   G.cars.push({
     id,
     classId,
@@ -172,6 +174,36 @@ function buyCar(classId) {
     autoRenew: null,
   });
   return { ok: true, carId: id };
+}
+
+// ─── Sell Car ─────────────────────────────────────────────────────────────────
+
+function getCarSellValue(car) {
+  const cls = getCarClassById(car.classId);
+  let upgradeSpend = 0;
+  UPGRADE_ORDER.forEach(id => {
+    for (let lvl = 0; lvl < car.upgrades[id]; lvl++) upgradeSpend += getUpgradeCost(id, lvl, car.classId);
+  });
+  return Math.floor((cls ? cls.baseCost : 0) * SELL_CAR_REFUND + upgradeSpend * SELL_UPGRADE_REFUND);
+}
+
+function sellCar(carId) {
+  const idx = G.cars.findIndex(c => c.id === carId);
+  if (idx === -1) return { ok: false, msg: 'Car not found.' };
+  const car = G.cars[idx];
+  if (car.championshipId) return { ok: false, msg: 'Withdraw from the championship first.' };
+  if (G.cars.length <= 1) return { ok: false, msg: 'You cannot sell your last car.' };
+
+  const value = getCarSellValue(car);
+  if (car.driverId) {
+    const driver = G.drivers.find(d => d.id === car.driverId);
+    if (driver) driver.carId = null;
+  }
+  if (G.raceEngineers && G.raceEngineers[carId]) delete G.raceEngineers[carId];
+  G.cars.splice(idx, 1);
+  G.money += value;
+  addNotification(`Sold ${car.name} for $${formatNumber(value)}.`, 'info');
+  return { ok: true, value };
 }
 
 // ─── Garage Upgrade ───────────────────────────────────────────────────────────

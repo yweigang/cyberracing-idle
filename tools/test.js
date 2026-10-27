@@ -201,6 +201,19 @@ test('Sponsor tiers open up with results', () => {
   assert(g.run('getAvailableSponsorTiers().includes("national")'), 'podium finish unlocks national');
 });
 
+test('Selling a car refunds part of its value and frees the slot', () => {
+  const { g, a, car } = setup();
+  g.run(`G.reputation = 1000; upgradeGarage(); buyCar('GT3'); assignDriver('${a}', '${car}');`);
+  g.run(`G.cars[0].upgrades.engine = 2`);
+  const value = g.run(`getCarSellValue(G.cars[0])`);
+  assert(value === Math.floor(10000 * 0.5 + (2500 + 4500) * 0.3), 'value = 50% price + 30% upgrades, got ' + value);
+  const m = g.run('G.money');
+  assert(g.run(`sellCar('${car}').ok`), 'sell works');
+  assert(g.run('G.money') - m === value && g.run('G.cars.length') === 1, 'refund paid and car removed');
+  assert(g.run(`G.drivers.find(d => d.id === '${a}').carId`) === null, 'driver unassigned');
+  assert(g.run(`sellCar(G.cars[0].id).ok`) === false, 'cannot sell the last car');
+});
+
 let failed = 0;
 for (const t of tests) {
   try { t.fn(); console.log('PASS', t.name); }

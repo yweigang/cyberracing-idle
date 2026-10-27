@@ -583,6 +583,10 @@ const GARAGE_UPGRADES = [
 
 const GARAGE_MAX_LEVEL = GARAGE_UPGRADES.length;
 
+// Share of a car's purchase price and upgrade spend refunded when it is sold
+const SELL_CAR_REFUND = 0.5;
+const SELL_UPGRADE_REFUND = 0.3;
+
 function getGarageSlots(level) {
   const entry = GARAGE_UPGRADES.find(g => g.level === level);
   return entry ? entry.slots : 1;

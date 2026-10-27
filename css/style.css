@@ -379,6 +379,7 @@ select { font-family: inherit; }
 .car-stats-right { text-align: right; }
 .car-ips   { font-family: var(--font-mono); font-size: 18px; color: var(--green); }
 .car-mult  { font-size: 11px; color: var(--text-2); }
+.sell-car-btn { margin-top: 6px; font-size: 11px; padding: 2px 8px; }
 
 .car-meta {
   display: flex;
