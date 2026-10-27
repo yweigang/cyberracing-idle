@@ -1249,7 +1249,7 @@ function renderPrestige() {
       <div class="prestige-pp">You have <span class="pp-value">${G.prestigePoints} PP</span></div>
       <div class="prestige-gain">Resetting now grants <span class="pp-gain">+${ppGain} PP</span>
         <span class="prestige-warning">(titles and podiums since the last reset, plus 1 PP per ${formatNumber(PRESTIGE_REP_PER_PP)} REP gained)</span></div>
-      <div class="prestige-warning">Resets money to $5,000 and all car upgrades. Cars, drivers, licenses, REP, sponsors and PP stay.
+      <div class="prestige-warning">Starts the team over: $5,000, one stock GT4 (plus a car per Development Token), no sponsors. Drivers, licenses, REP, garage, staff and PP stay.
         ${(G.prestige.prestigeCount || 0) === 0 ? '<br>Your first reset unlocks the <b>Single-Seater Pathway</b> (F4 → F1).' : ''}</div>
       <button class="btn btn-prestige ${canP ? '' : 'disabled'}" id="prestige-btn" ${canP ? '' : 'disabled'}>
         ${!canP ? `Earn ${PRESTIGE_MIN_GAIN} PP to reset · ${ppGain} so far` : _confirmingPrestige ? `Confirm reset — +${ppGain} PP` : `Prestige — +${ppGain} PP`}

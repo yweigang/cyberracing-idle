@@ -571,7 +571,7 @@ const PRESTIGE_ITEMS = [
     id: 'dev_token',
     name: 'Development Token',
     cost: 200,
-    description: 'Each token keeps one upgrade line through resets (Engine, then Aero, Tyres, Brakes, Reliability).',
+    description: 'Each token keeps one more car through resets (highest class first). Its upgrades still reset.',
     maxPurchases: 5,
   },
   {

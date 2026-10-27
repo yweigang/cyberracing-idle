@@ -1290,32 +1290,54 @@ function doPrestige() {
   G.prestige.totalResets++;
   const singleSeaterJustUnlocked = prevPrestigeCount === 0;
 
-  // Reset money
+  // Reset money and end all championships
   G.money = 5000;
+  G.activeChampionships = [];
 
+  // Cars: development tokens keep the highest-class cars, the rest are scrapped.
+  // There is always at least one GT4 to restart with.
+  const tokens = G.prestige.permanentBonuses.devTokens || 0;
+  const keptCars = [...G.cars]
+    .sort((a, b) => getCarClassById(b.classId).tier - getCarClassById(a.classId).tier)
+    .slice(0, tokens);
+  if (!keptCars.some(c => c.classId === 'GT4')) {
+    const ownGT4 = G.cars.find(c => c.classId === 'GT4');
+    if (ownGT4) keptCars.push(ownGT4);
+  }
+  G.cars.filter(c => !keptCars.includes(c)).forEach(c => {
+    if (G.raceEngineers && G.raceEngineers[c.id]) delete G.raceEngineers[c.id];
+  });
+  G.cars = keptCars;
+  if (!G.cars.some(c => c.classId === 'GT4')) {
+    G.cars.push({ id: 'car_' + G.nextCarId++, classId: 'GT4', name: 'GT4 #1', upgrades: {}, driverId: null, championshipId: null, autoRenew: null });
+  }
+
+  // Upgrades reset to the head-start level (2 reliability levels are kept)
   const headStart = G.prestige.permanentBonuses.headStartLevels || 0;
-  const kept = UPGRADE_ORDER.slice(0, G.prestige.permanentBonuses.devTokens || 0);
-
-  // Reset car upgrades: head-start levels, 2 reliability levels kept, token lines kept
   G.cars.forEach(car => {
-    const old = car.upgrades;
+    const oldReli = car.upgrades.reliability || 0;
     const fresh = {};
     UPGRADE_ORDER.forEach(id => { fresh[id] = Math.min(UPGRADES[id].maxLevel, headStart); });
-    fresh.reliability = Math.min(20, Math.min(old.reliability, 2) + headStart);
-    kept.forEach(id => { fresh[id] = Math.max(fresh[id], old[id]); });
+    fresh.reliability = Math.min(20, Math.min(oldReli, 2) + headStart);
     car.upgrades = fresh;
     car.championshipId = null;
     car.autoRenew = null;
   });
 
-  // Clear any lingering active championships (safety net)
-  G.activeChampionships.forEach(entry => {
-    const car = G.cars.find(c => c.id === entry.carId);
-    if (car) car.championshipId = null;
-  });
-  G.activeChampionships = [];
+  // Drivers keep their seats only in surviving cars
+  G.drivers.forEach(d => { if (d.carId && !G.cars.some(c => c.id === d.carId)) d.carId = null; });
+  G.cars.forEach(c => { if (c.driverId && !G.drivers.some(d => d.id === c.driverId)) c.driverId = null; });
+  const gt4 = G.cars.find(c => c.classId === 'GT4' && !c.driverId);
+  if (gt4) {
+    const free = G.drivers.filter(d => !d.carId).sort((a, b) => calcDriverSkill(b, 'sprint') - calcDriverSkill(a, 'sprint'))[0];
+    if (free) assignDriver(free.id, gt4.id);
+  }
 
-  addNotification(`Prestige! +${ppGain} PP. Money and upgrades reset.`, 'prestige');
+  // Sponsor contracts end; a fresh set of offers is waiting
+  G.sponsors = [null, null, null, null, null];
+  G.sponsorOffers = null;
+
+  addNotification(`Prestige! +${ppGain} PP. The team starts over with ${G.cars.length} car${G.cars.length > 1 ? 's' : ''} and $5,000.`, 'prestige');
   if (singleSeaterJustUnlocked) {
     addNotification('🏎️ Single-Seater Pathway Unlocked! F4 is now available.', 'prestige');
   }

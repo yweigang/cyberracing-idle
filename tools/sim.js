@@ -142,7 +142,7 @@ for (let s = 1; s <= HOURS * 3600; s++) {
     console.log(`${fmtTime()}  -- S${season - 1}: earned $${Math.round(earned - lastEarned).toLocaleString('en')} | bank $${sum.m.toLocaleString('en')} | REP ${sum.rep} | sponsors $${sum.sp}/s | ${sum.cars}`);
     console.log(`          results: ${sum.res}`);
     lastEarned = earned;
-    if (PRESTIGE && g.run('calcPrestigePoints()') >= 60) {
+    if (PRESTIGE && g.run('calcPrestigePoints()') >= 150) {
       const r = g.run('doPrestige()');
       console.log(`${fmtTime()}  PRESTIGE +${r.ppGain} PP`);
       g.run(`['wind_tunnel', 'head_start', 'dev_token'].forEach(id => { while (buyPrestigeItem(id).ok); })`);
