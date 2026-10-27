@@ -66,6 +66,7 @@ function createDefaultState() {
     hasFactoryLivery: false,
     teamPrincipal: null,
     raceEngineers: {},
+    spareEngineers: [],        // paid race engineers whose car was sold, waiting for a car
     licensePtMultiplier: LICENSE_CONFIG.defaultMultiplier,
     hq: { simulator: 0, composites: 0, hospitality: 0 },
     pitCrew: { level: 0, size: 1 },
@@ -415,7 +416,7 @@ function sellCar(carId) {
   if (car.championshipId) withdrawFromChampionship(car.championshipId);
   const value = getCarSellValue(car);
   getCarLineup(car).forEach(d => { d.carId = null; });
-  if (G.raceEngineers && G.raceEngineers[carId]) delete G.raceEngineers[carId];
+  _releaseCarEngineer(carId);
   if (getRegistration(carId)) cancelRegistration(carId);
   G.cars.splice(idx, 1);
   G.money += value;
@@ -834,7 +835,7 @@ function generateDriverStats(tier, randFn) {
 
 // Names of everyone on the team (drivers and staff), plus any extra people passed in
 function _takenNames(extra = []) {
-  const staff = [G.teamPrincipal, ...Object.values(G.raceEngineers || {})].filter(Boolean);
+  const staff = [G.teamPrincipal, ...Object.values(G.raceEngineers || {}), ...(G.spareEngineers || [])].filter(Boolean);
   return new Set([...G.drivers, ...staff, ...extra].map(p => p.name));
 }
 
@@ -1348,6 +1349,38 @@ function hireRE(carId, staffData) {
   return { ok: true };
 }
 
+// A car leaves the team: a paid engineer moves to the spare list, a free one leaves
+function _releaseCarEngineer(carId) {
+  const re = getREForCar(carId);
+  if (!re) return;
+  delete G.raceEngineers[carId];
+  if (re.salary > 0) {
+    G.spareEngineers.push(re);
+    addNotification(`${re.name} stays with the team as a spare race engineer: assign them to a car in the Staff tab.`, 'info');
+  }
+}
+
+// Puts a spare engineer on a car; a paid engineer already on it becomes the spare
+function assignSpareEngineer(index, carId) {
+  const re = G.spareEngineers[index];
+  if (!re) return { ok: false, msg: 'No such spare engineer.' };
+  if (!G.cars.some(c => c.id === carId)) return { ok: false, msg: 'Car not found.' };
+  G.spareEngineers.splice(index, 1);
+  _releaseCarEngineer(carId);
+  G.raceEngineers[carId] = re;
+  const car = G.cars.find(c => c.id === carId);
+  addNotification(`${re.name} is now Race Engineer for ${car.name}.`, 'success');
+  return { ok: true };
+}
+
+function releaseSpareEngineer(index) {
+  const re = G.spareEngineers[index];
+  if (!re) return { ok: false, msg: 'No such spare engineer.' };
+  G.spareEngineers.splice(index, 1);
+  addNotification(`${re.name} left the engineering team.`, 'info');
+  return { ok: true };
+}
+
 function fireRE(carId) {
   if (!G.raceEngineers || !G.raceEngineers[carId]) return { ok: false, msg: 'No Race Engineer to fire.' };
   const name = G.raceEngineers[carId].name;
@@ -1402,6 +1435,7 @@ function getPayroll() {
   const rows = [];
   if (G.teamPrincipal) rows.push({ kind: 'tp', person: G.teamPrincipal, salary: G.teamPrincipal.salary || 0 });
   Object.entries(G.raceEngineers || {}).forEach(([carId, re]) => rows.push({ kind: 're', carId, person: re, salary: re.salary || 0 }));
+  (G.spareEngineers || []).forEach(re => rows.push({ kind: 're', carId: null, person: re, salary: re.salary || 0 }));
   G.drivers.forEach(d => rows.push({ kind: 'driver', person: d, salary: getDriverSalary(d) }));
   return rows.filter(r => r.salary > 0);
 }
@@ -1429,7 +1463,8 @@ function deductSeasonSalaries() {
     const r = rows.shift();
     total -= r.salary;
     if (r.kind === 'tp') G.teamPrincipal = null;
-    else if (r.kind === 're') delete G.raceEngineers[r.carId];
+    else if (r.kind === 're' && r.carId) delete G.raceEngineers[r.carId];
+    else if (r.kind === 're') G.spareEngineers.splice(G.spareEngineers.indexOf(r.person), 1);
     else { _detachDriver(r.person); G.drivers.splice(G.drivers.indexOf(r.person), 1); }
     addNotification(`${r.person.name} left: the team couldn't pay their $${formatNumber(r.salary)} salary.`, 'error');
   }
@@ -1550,6 +1585,7 @@ function _migrateStaff() {
   if (!G.raceEngineers || typeof G.raceEngineers !== 'object' || Array.isArray(G.raceEngineers)) {
     G.raceEngineers = {};
   }
+  if (!Array.isArray(G.spareEngineers)) G.spareEngineers = [];
   // Remove RE entries for cars that no longer exist
   Object.keys(G.raceEngineers).forEach(carId => {
     if (!G.cars.find(c => c.id === carId)) delete G.raceEngineers[carId];
@@ -1799,9 +1835,7 @@ function doPrestige() {
     const ownGT4 = G.cars.find(c => c.classId === 'GT4');
     if (ownGT4) keptCars.push(ownGT4);
   }
-  G.cars.filter(c => !keptCars.includes(c)).forEach(c => {
-    if (G.raceEngineers && G.raceEngineers[c.id]) delete G.raceEngineers[c.id];
-  });
+  G.cars.filter(c => !keptCars.includes(c)).forEach(c => _releaseCarEngineer(c.id));
   G.cars = keptCars;
   if (!G.cars.some(c => c.classId === 'GT4')) {
     G.cars.push({ id: 'car_' + G.nextCarId++, classId: 'GT4', name: 'GT4 #1', upgrades: { reliability: 0 }, driverId: null, coDriverIds: [], championshipId: null, autoRenew: null });
@@ -2096,7 +2130,7 @@ function _migrateFeedbackRound() {
 }
 
 function _migrateDuplicateNames() {
-  const people = [...G.drivers, G.teamPrincipal, ...Object.values(G.raceEngineers || {})].filter(Boolean);
+  const people = [...G.drivers, G.teamPrincipal, ...Object.values(G.raceEngineers || {}), ...(G.spareEngineers || [])].filter(Boolean);
   const seen = new Set();
   people.forEach(p => {
     if (!seen.has(p.name)) { seen.add(p.name); return; }

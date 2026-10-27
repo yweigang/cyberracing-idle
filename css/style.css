@@ -1420,6 +1420,7 @@ select { font-family: inherit; }
 }
 .staff-re-empty {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 12px;
   font-size: 12px;

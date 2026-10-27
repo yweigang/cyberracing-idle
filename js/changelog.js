@@ -4,6 +4,14 @@
 
 const CHANGELOG = [
   {
+    version: '0.5.4',
+    date: '2026-10-27',
+    title: 'Spare engineers',
+    changes: [
+      'Selling a car, or losing it in a prestige reset, no longer loses its paid race engineer. They become a spare engineer you can assign to another car in the Staff tab. Spares still draw their salary and can be released.',
+    ],
+  },
+  {
     version: '0.5.3',
     date: '2026-10-27',
     title: 'Sponsor PP',

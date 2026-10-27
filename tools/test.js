@@ -76,6 +76,19 @@ test('Sponsor PP count toward the next prestige, not the PP balance', () => {
   assert(g.run('G.prestigePoints') === 0 && g.run('G.prestige.sponsorPP') === 5, 'migration moves unspent PP');
 });
 
+test('Selling a car keeps its paid race engineer as a spare for another car', () => {
+  const { g, car } = setup();
+  g.run(`G.reputation = 1000; upgradeGarage(); buyCar('GT3');
+         hireRE('${car}', generateREOptions().find(o => o.tier === 'international'));`);
+  const name = g.run(`getREForCar('${car}').name`);
+  assert(g.run(`sellCar('${car}').ok`), 'sell failed');
+  assert(g.run('G.spareEngineers.length') === 1 && g.run('G.spareEngineers[0].name') === name, 'engineer becomes a spare');
+  assert(g.run(`getPayroll().some(r => r.person.name === '${name}')`), 'spare still draws salary');
+  const other = g.run('G.cars[0].id');
+  assert(g.run(`assignSpareEngineer(0, '${other}').ok`) && g.run(`getREForCar('${other}').name`) === name, 'spare assigned');
+  assert(g.run('G.spareEngineers.length') === 0, 'spare list emptied');
+});
+
 test('Save/load round-trips and migrates drivers without license data', () => {
   const { g } = setup();
   g.run(`G.drivers.forEach(d => { delete d.licenses; delete d.licensePoints; }); saveGame(); loadGame();`);

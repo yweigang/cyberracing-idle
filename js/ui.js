@@ -338,7 +338,7 @@ function _confirmSellCar(carId) {
     lineup.length ? `${lineup.map(d => d.name).join(', ')} ${lineup.length > 1 ? 'go' : 'goes'} back to the driver roster.` : '',
     entry ? `<span class="dialog-warn">${car.name} is racing in ${getChampionshipById(entry.definitionId).name}: that championship is abandoned and its entry fee is lost.</span>` : '',
     reg ? `Its registration for ${getChampionshipById(reg.definitionId).name} next season is cancelled and refunded.` : '',
-    re ? `<span class="dialog-warn">Race engineer ${re.name} leaves the team.</span>` : '',
+    re ? (re.salary > 0 ? `Race engineer ${re.name} stays as a spare engineer for another car.` : `<span class="dialog-warn">Race engineer ${re.name} leaves the team.</span>`) : '',
     G.cars.length === 1 ? `<span class="dialog-warn">This is your last car. You'll need to buy a new one to keep racing.</span>` : '',
   ].filter(Boolean);
   showConfirmDialog({
@@ -1478,6 +1478,7 @@ function renderStaff() {
       } else if (!re) {
         html += `<div class="staff-re-empty">
           <span>No engineer</span>
+          ${(G.spareEngineers || []).map((s, i) => `<button class="btn assign-spare-btn" data-car="${car.id}" data-idx="${i}">Assign ${s.name} (${RE_TIERS[s.tier].label})</button>`).join('')}
           <button class="btn hire-re-btn" data-car="${car.id}">Hire RE</button>
         </div>`;
       } else {
@@ -1510,6 +1511,29 @@ function renderStaff() {
       }
 
       html += `</div>`; // end staff-re-row
+    });
+  }
+
+  // ── Spare engineers: paid engineers whose car was sold
+  if ((G.spareEngineers || []).length) {
+    html += `<div class="section-header">SPARE ENGINEERS</div>
+      <div class="staff-section-desc">Engineers without a car still draw their salary. Assign them to a car without an engineer above.</div>`;
+    G.spareEngineers.forEach((re, i) => {
+      const reTierDef = RE_TIERS[re.tier];
+      html += `
+        <div class="staff-re-card" style="--staff-color:${reTierDef.color}">
+          <div class="staff-card-header">
+            <div>
+              <div class="staff-name">${re.name}</div>
+              <div class="staff-tier-label" style="color:${reTierDef.color}">${reTierDef.label} · Spare Race Engineer</div>
+            </div>
+            <div class="staff-salary-badge">$${formatNumber(re.salary)}/season</div>
+          </div>
+          <div class="staff-stats-grid">${_renderStaffStatBlock(re, RE_STAT_KEYS, RE_STAT_LABELS)}</div>
+          <div class="staff-card-actions">
+            <button class="btn btn-danger release-spare-btn" data-idx="${i}">Release</button>
+          </div>
+        </div>`;
     });
   }
 
@@ -1587,6 +1611,21 @@ function renderStaff() {
   container.querySelectorAll('[data-cancel-re]').forEach(btn => {
     btn.addEventListener('click', () => {
       _hiringRECarId = null; _reCandidates = [];
+      renderStaff();
+    });
+  });
+
+  container.querySelectorAll('.assign-spare-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const result = assignSpareEngineer(parseInt(btn.dataset.idx), btn.dataset.car);
+      if (!result.ok) addNotification(result.msg, 'error');
+      renderStaff();
+    });
+  });
+
+  container.querySelectorAll('.release-spare-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      releaseSpareEngineer(parseInt(btn.dataset.idx));
       renderStaff();
     });
   });
