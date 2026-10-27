@@ -457,7 +457,7 @@ function renderResultStrip(entry) {
   if (!entry.results || entry.results.length === 0) return '';
   const cells = entry.results.map(res => {
     const cls = typeof res !== 'number' ? 'res-dnf' : res === 1 ? 'res-win' : res <= 3 ? 'res-podium' : res <= 10 ? 'res-points' : '';
-    return `<span class="res-cell ${cls}">${typeof res === 'number' ? res : res}</span>`;
+    return `<span class="res-cell ${cls}">${res}</span>`;
   }).join('');
   return `<div class="result-strip">${cells}</div>`;
 }
@@ -537,6 +537,7 @@ function renderDrivers() {
         </div>
         <div class="scout-rarity" style="color: ${isLocked ? '#444' : ''}">${def.rarity}</div>
         <div class="scout-budget" style="color: ${isLocked ? '#333' : ''}">${budgetLabel}</div>
+        <div class="scout-budget" style="color: ${isLocked ? '#333' : ''}">Licenses: ${(TIER_STARTING_LICENSES[tier] || ['GT4']).filter(id => isSingleSeaterUnlocked() || id[0] !== 'F').join(', ')}</div>
         ${isLocked
           ? `<div class="scout-locked-msg">Unlocked via Prestige</div>`
           : `<button class="btn scout-btn ${canAfford ? '' : 'disabled'}"

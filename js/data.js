@@ -180,7 +180,8 @@ const CLASS_LICENSE_REQUIREMENT = {
   F1:      'F1',
 };
 
-// LP earned per season toward each license, keyed by the class the driver raced in.
+// LP earned per completed championship toward each license, keyed by the class raced in.
+// The full amount is paid for a title; lower finishes earn a share (LICENSE_RESULT_FACTORS).
 // "—" cells in the spec (already qualified) are simply absent from each row.
 const LP_EARN_TABLE = {
   KARTING: { F4: 10, GT4: 5,  GT3: 2,  LMP3: 1,  LMP2: 1,  HYPERCAR: 1,  F1: 1  },
@@ -193,6 +194,18 @@ const LP_EARN_TABLE = {
   // F3/F2 not in original spec — values are estimates, adjust as needed
   F3:      {                           LMP3: 20, LMP2: 10, HYPERCAR: 6,  F1: 15 },
   F2:      {                                     LMP2: 25, HYPERCAR: 15, F1: 25 },
+};
+
+// Share of the LP table earned by final championship position (last value repeats)
+const LICENSE_RESULT_FACTORS = [1, 0.75, 0.6, 0.4, 0.4, 0.2, 0.2, 0.2, 0.2, 0.2, 0.1];
+
+// Licenses a freshly scouted driver already holds, by driver tier
+const TIER_STARTING_LICENSES = {
+  C: ['GT4'],
+  B: ['GT4', 'GT3'],
+  A: ['GT4', 'GT3', 'LMP3', 'F4'],
+  S: ['GT4', 'GT3', 'LMP3', 'LMP2', 'F4'],
+  L: ['GT4', 'GT3', 'LMP3', 'LMP2', 'HYPERCAR', 'F4'],
 };
 
 // Global LP multiplier config — wire prestige scaling here when values are finalised

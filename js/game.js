@@ -393,6 +393,9 @@ function finishChampionship(entry) {
   G.reputation += bonusRep;
   entry.repEarned += bonusRep;
 
+  const driver = car && car.driverId ? G.drivers.find(d => d.id === car.driverId) : null;
+  const lpGained = awardChampionshipLP(driver, entry.classId || (car && car.classId), finalPos, entry.carId);
+
   G.completedChampionships.push({
     definitionId: entry.definitionId,
     carId: entry.carId,
@@ -400,6 +403,7 @@ function finishChampionship(entry) {
     classId: entry.classId || (car && car.classId),
     finalPosition: finalPos,
     points: entry.points,
+    lpGained,
     repEarned: entry.repEarned,
     prizeEarned: entry.prizeEarned + bonusCash,
     season: G.season,
@@ -408,7 +412,7 @@ function finishChampionship(entry) {
   G.champCompletions[entry.definitionId] = (G.champCompletions[entry.definitionId] || 0) + 1;
   if (car) car.championshipId = null;
   entry._completed = true;
-  return { finalPos, bonusCash, bonusRep };
+  return { finalPos, bonusCash, bonusRep, lpGained };
 }
 
 // ─── Driver Stat Generation ───────────────────────────────────────────────────
@@ -485,8 +489,9 @@ function scoutDriver(tier) {
     age,
     retirementAge,
     carId: null,
-    licenses: ['GT4'],
-    licensePoints: Object.fromEntries(LICENSE_TIERS.map(lt => [lt.id, lt.id === 'GT4' ? lt.pointsRequired : 0])),
+    licenses: [...(TIER_STARTING_LICENSES[tier] || ['GT4'])],
+    licensePoints: Object.fromEntries(LICENSE_TIERS.map(lt => [lt.id,
+      (TIER_STARTING_LICENSES[tier] || ['GT4']).includes(lt.id) ? lt.pointsRequired : 0])),
   };
   G.drivers.push(driver);
   return { ok: true, driver };
@@ -982,60 +987,41 @@ function _champDriverAndClass(comp) {
   return { driverId: car ? car.driverId : null, classId: car ? car.classId : null };
 }
 
-// Compute and award License Points to all drivers at season end.
-// Returns { driverId: { licenseId: pointsEarned, ... }, ... }
-function _awardSeasonLP() {
-  const lpByDriver = {};
+// Award License Points to a driver for one completed championship.
+// Returns { licenseId: pointsEarned } for licenses not yet held.
+function awardChampionshipLP(driver, classId, finalPos, carId) {
+  if (!driver) return {};
+  const lpTable = LP_EARN_TABLE[classId] || {};
+  const factor  = LICENSE_RESULT_FACTORS[Math.min(finalPos, LICENSE_RESULT_FACTORS.length) - 1];
+  const mult    = (G.licensePtMultiplier || 1.0) * (1 + getREBonuses(carId).coachBonus) * factor;
+  if (!driver.licensePoints) driver.licensePoints = {};
+  if (!driver.licenses) driver.licenses = ['GT4'];
 
-  // Determine each driver's highest-tier class raced this season (by who completed each championship)
-  const driverHighest = {};
-  G.completedChampionships
-    .filter(c => c.season === G.season)
-    .forEach(comp => {
-      const { driverId, classId } = _champDriverAndClass(comp);
-      if (!driverId) return;
-      const cls = getCarClassById(classId);
-      if (!cls) return;
-      const prev = driverHighest[driverId];
-      const prevCls = prev ? getCarClassById(prev.classId) : null;
-      if (!prevCls || cls.tier > prevCls.tier) {
-        driverHighest[driverId] = { classId, carId: comp.carId };
-      }
-    });
+  const earned = {};
+  Object.entries(lpTable).forEach(([licenseId, baseLP]) => {
+    if (driver.licenses.includes(licenseId)) return;
+    const pts = Math.round(baseLP * mult);
+    if (pts <= 0) return;
+    driver.licensePoints[licenseId] = (driver.licensePoints[licenseId] || 0) + pts;
+    earned[licenseId] = pts;
 
-  // Award LP and grant licenses for each qualifying driver
-  Object.entries(driverHighest).forEach(([driverId, { classId, carId }]) => {
-    const driver = G.drivers.find(d => d.id === driverId);
-    if (!driver) return;
-
-    const lpTable    = LP_EARN_TABLE[classId] || {};
-    const globalMult = G.licensePtMultiplier || 1.0;
-    const coachMult  = 1 + getREBonuses(carId).coachBonus;
-    const totalMult  = globalMult * coachMult;
-
-    const earned = {};
-    Object.entries(lpTable).forEach(([licenseId, baseLP]) => {
-      const pts = Math.round(baseLP * totalMult);
-      if (pts <= 0) return;
-      if (!driver.licensePoints) driver.licensePoints = {};
-      driver.licensePoints[licenseId] = (driver.licensePoints[licenseId] || 0) + pts;
-      earned[licenseId] = pts;
-
-      // Grant license if threshold reached
-      const licenseDef = LICENSE_TIERS.find(lt => lt.id === licenseId);
-      if (licenseDef && driver.licensePoints[licenseId] >= licenseDef.pointsRequired) {
-        if (!driver.licenses) driver.licenses = ['GT4'];
-        if (!driver.licenses.includes(licenseId)) {
-          driver.licenses.push(licenseId);
-          addNotification(`🏆 ${driver.name} has earned their ${licenseDef.name} License!`, 'success');
-        }
-      }
-    });
-
-    lpByDriver[driverId] = earned;
+    const licenseDef = LICENSE_TIERS.find(lt => lt.id === licenseId);
+    if (licenseDef && driver.licensePoints[licenseId] >= licenseDef.pointsRequired) {
+      driver.licenses.push(licenseId);
+      _notify(`🏆 ${driver.name} has earned their ${licenseDef.name} License!`, 'success');
+    }
   });
+  return earned;
+}
 
-  return lpByDriver;
+// LP earned this season per driver, summed from completed championships
+function _seasonLPByDriver(season) {
+  const byDriver = {};
+  G.completedChampionships.filter(c => c.season === season && c.driverId && c.lpGained).forEach(c => {
+    const acc = byDriver[c.driverId] = byDriver[c.driverId] || {};
+    Object.entries(c.lpGained).forEach(([id, pts]) => { acc[id] = (acc[id] || 0) + pts; });
+  });
+  return byDriver;
 }
 
 function endSeason() {
@@ -1050,8 +1036,8 @@ function endSeason() {
   // 2. Deduct staff salaries
   deductSeasonSalaries();
 
-  // 3. Award LP to drivers (before aging so retired drivers still receive their LP)
-  const lpByDriver = _awardSeasonLP();
+  // 3. LP was awarded per championship; collect it for the summary
+  const lpByDriver = _seasonLPByDriver(endedSeason);
 
   // 4. Age all drivers, apply career stat changes, handle retirements
   // Snapshot stats before changes so we can return a diff for the UI
@@ -1231,7 +1217,8 @@ function advanceWorld(now) {
         const fin = finishChampionship(entry);
         entry._finishedAt = entry.roundStartTime;
         const title = fin.finalPos === 1 ? '🏆 CHAMPIONS!' : `finished P${fin.finalPos} overall`;
-        _notify(`${champDef.name}: ${title}${fin.bonusCash ? ` +$${formatNumber(fin.bonusCash)} standings bonus` : ''}`, fin.finalPos <= 3 ? 'success' : 'info');
+        const lpText = Object.entries(fin.lpGained || {}).map(([id, p]) => `+${p} ${id} LP`).join(', ');
+        _notify(`${champDef.name}: ${title}${fin.bonusCash ? ` +$${formatNumber(fin.bonusCash)} standings bonus` : ''}${lpText ? ' · ' + lpText : ''}`, fin.finalPos <= 3 ? 'success' : 'info');
       }
     }
   });

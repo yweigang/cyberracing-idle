@@ -143,6 +143,30 @@ test('Offline progress replays seasons and auto-renewals', () => {
   assert(g.run('G.completedChampionships.length') >= 20, 'auto-renewed championships while offline');
 });
 
+test('Two GT4 Cup titles earn the GT3 license', () => {
+  const { g, a, car } = setup();
+  g.run(`assignDriver('${a}', '${car}'); UPGRADE_ORDER.forEach(u => G.cars[0].upgrades[u] = 12);`);
+  finishChamp(g, 'gt4_regional', car);
+  assert(driver(g, a).licensePoints.GT3 === 25, 'title pays 25 GT3 LP, got ' + driver(g, a).licensePoints.GT3);
+  assert(!driver(g, a).licenses.includes('GT3'), 'one title is not enough');
+  finishChamp(g, 'gt4_regional', car);
+  assert(driver(g, a).licenses.includes('GT3'), 'two titles grant GT3');
+});
+
+test('Lower finishes earn a share of the LP', () => {
+  const { g } = setup();
+  const pts = g.run(`(() => { const d = scoutDriver('C').driver; return awardChampionshipLP(d, 'GT4', 6, null).GT3; })()`);
+  assert(pts === 5, 'P6 earns 20% of 25 GT3 LP, got ' + pts);
+});
+
+test('Higher-tier scouts arrive with licenses and earn no LP for them', () => {
+  const { g } = setup();
+  const lic = g.run(`scoutDriver('A').driver.licenses`);
+  assert(['GT3', 'LMP3'].every(l => lic.includes(l)) && !lic.includes('LMP2'), 'A tier holds up to LMP3: ' + lic);
+  const earned = g.run(`awardChampionshipLP(G.drivers[G.drivers.length - 1], 'GT4', 1, null)`);
+  assert(!('GT3' in earned) && earned.LMP3 === undefined && earned.LMP2 > 0, 'no LP toward held licenses');
+});
+
 let failed = 0;
 for (const t of tests) {
   try { t.fn(); console.log('PASS', t.name); }
