@@ -12,8 +12,6 @@ let _hiringTP = false;
 let _tpCandidates = [];
 let _hiringRECarId = null;     // carId being hired for, or null
 let _reCandidates = [];
-let _confirmingEndSeason = false;
-let _seasonSummary = null; // driverChanges array from last endSeason()
 let _confirmingReset = false;
 
 // ─── Tab Navigation ───────────────────────────────────────────────────────────
@@ -23,8 +21,6 @@ function switchTab(tabId) {
   // Clear transient state on tab switch
   _hiringTP = false; _tpCandidates = [];
   _hiringRECarId = null; _reCandidates = [];
-  _confirmingEndSeason = false;
-  _seasonSummary = null;
   _confirmingReset = false;
   document.querySelectorAll('.tab-btn').forEach(btn => {
     btn.classList.toggle('active', btn.dataset.tab === tabId);
@@ -53,6 +49,8 @@ function updateCurrencyBar() {
   document.getElementById('hud-rep').textContent = formatNumber(G.reputation) + ' REP';
   document.getElementById('hud-pp').textContent = G.prestigePoints + ' PP';
   document.getElementById('hud-ips').textContent = '$' + formatNumber(calcTotalIncomePerSec()) + '/s';
+  document.getElementById('hud-season-label').textContent = 'Season ' + G.season;
+  document.getElementById('hud-season').textContent = formatClock(getSeasonTimeLeft());
 }
 
 // ─── Notifications ────────────────────────────────────────────────────────────
@@ -322,7 +320,10 @@ function renderChampionships() {
           <div class="champ-footer">
             <span data-live-timer>${timerText}</span>
             <span>+$${formatNumber(entry.prizeEarned || 0)} · +${formatNumber(entry.repEarned)} REP</span>
-            <button class="btn btn-danger withdraw-btn" data-entry="${entry.id}">Withdraw</button>
+            <span class="champ-footer-actions">
+              <button class="btn autorenew-btn ${car && car.autoRenew ? 'on' : ''}" data-car="${entry.carId}">🔁 Auto-renew ${car && car.autoRenew ? 'on' : 'off'}</button>
+              <button class="btn btn-danger withdraw-btn" data-entry="${entry.id}">Withdraw</button>
+            </span>
           </div>
         </div>`;
     });
@@ -354,7 +355,8 @@ function renderChampionships() {
     const prereqOk = checkChampionshipPrerequisite(champDef);
     const hardLocked = !repOk || !prereqOk;
     const canAfford  = G.money >= champDef.entryFee;
-    const canEnter   = !hardLocked && canAfford;
+    const timeOk     = fitsInSeason(champDef);
+    const canEnter   = !hardLocked && canAfford && timeOk;
     const completions = G.champCompletions[champDef.id] || 0;
     const selCar = _selectedCarForChamp ? G.cars.find(c => c.id === _selectedCarForChamp) : null;
     const selFits = selCar && champDef.allowedClasses.includes(selCar.classId);
@@ -375,6 +377,8 @@ function renderChampionships() {
     }
     if (!hardLocked && !canAfford)
       lockReasons.push(`<span class="lock-reason money">💰 $${formatNumber(champDef.entryFee)} entry fee</span>`);
+    if (!hardLocked && !timeOk)
+      lockReasons.push(`<span class="lock-reason time">⏱ Needs ${formatClock(getChampionshipDuration(champDef))} — season ends in ${formatClock(getSeasonTimeLeft())}</span>`);
 
     availHtml += `
       <div class="champ-card ${hardLocked ? 'champ-locked' : ''}" style="--cls-color: ${champDef.color}">
@@ -386,7 +390,7 @@ function renderChampionships() {
         <div class="champ-desc">${champDef.description}</div>
         <div class="champ-stats">
           <span>📅 ${champDef.rounds} rounds</span>
-          <span>⏱ ${champDef.roundDurationSec}s/round</span>
+          <span>⏱ ${champDef.roundDurationSec}s/round · ${formatClock(getChampionshipDuration(champDef))} total</span>
           <span>${champDef.format === 'endurance' ? '🌙 Endurance' : '⚡ Sprint'}</span>
           <span>🌧 ${Math.round((champDef.wetChance || 0) * 100)}% wet</span>
           <span>🏁 Field ★ ${fieldStr}${selRating !== null ? ` · yours ★ ${selRating}` : ''}</span>
@@ -419,6 +423,14 @@ function renderChampionships() {
       const result = enterChampionship(btn.dataset.champ, _selectedCarForChamp);
       if (!result.ok) addNotification(result.msg, 'error');
       else addNotification('Entered championship!', 'success');
+      renderChampionships();
+    });
+  });
+
+  container.querySelectorAll('.autorenew-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const car = G.cars.find(c => c.id === btn.dataset.car);
+      setAutoRenew(btn.dataset.car, !(car && car.autoRenew));
       renderChampionships();
     });
   });
@@ -1116,83 +1128,47 @@ function renderStaff() {
 
 function renderPrestige() {
   const container = document.getElementById('panel-prestige');
-  const canEnd = canEndSeason();
 
-  // ── Season summary
+  // ── Season clock
   const completedThisSeason = G.completedChampionships.filter(c => c.season === G.season);
-  const abandonList = G.activeChampionships.map(e => {
-    const def = getChampionshipById(e.definitionId);
-    const car = G.cars.find(c => c.id === e.carId);
-    return `${def ? def.shortName : e.definitionId} — ${car ? car.name : 'unknown'} (Round ${e.currentRound + 1}/${e.maxRounds})`;
-  });
-  const driverCount = G.drivers.length;
   let totalSalary = G.teamPrincipal ? (G.teamPrincipal.salary || 0) : 0;
   if (G.raceEngineers) Object.values(G.raceEngineers).forEach(re => { totalSalary += re.salary || 0; });
+  const leftSec = getSeasonTimeLeft();
+  const seasonPct = 100 - (leftSec / SEASON_LENGTH_SEC) * 100;
+  const titles = completedThisSeason.filter(c => c.finalPosition === 1).length;
 
-  // ── End Season section
-  let html = `<div class="section-header">END SEASON</div>`;
-
-  if (_confirmingEndSeason) {
-    // Confirmation panel
-    let confirmRows = `
-      <div class="confirm-row">
-        <span class="confirm-label">Championships completed</span>
-        <span class="confirm-value ok">${completedThisSeason.length}</span>
-      </div>`;
-
-    if (abandonList.length > 0) {
-      confirmRows += `
-        <div class="confirm-row">
-          <span class="confirm-label">Will be abandoned</span>
-          <span class="confirm-value warn">${abandonList.length} championship${abandonList.length !== 1 ? 's' : ''}</span>
-        </div>
-        <div class="confirm-abandon-list">${abandonList.map(s => `<div class="confirm-abandon-item">✕ ${s}</div>`).join('')}</div>`;
-    } else {
-      confirmRows += `
-        <div class="confirm-row">
-          <span class="confirm-label">Abandoned championships</span>
-          <span class="confirm-value">None</span>
-        </div>`;
-    }
-
-    confirmRows += `
-      <div class="confirm-row">
-        <span class="confirm-label">Staff salaries deducted</span>
-        <span class="confirm-value ${totalSalary > 0 ? 'warn' : ''}">${totalSalary > 0 ? '-$' + formatNumber(totalSalary) : 'None'}</span>
+  let html = `<div class="section-header">SEASON ${G.season}</div>
+    <div class="season-clock">
+      <div class="season-clock-top">
+        <span class="season-clock-time" id="season-clock-time">${formatClock(leftSec)}</span>
+        <span class="season-clock-sub">until the season ends · drivers age +1 · contracts and salaries settle</span>
       </div>
-      <div class="confirm-row">
-        <span class="confirm-label">Driver aging</span>
-        <span class="confirm-value">${driverCount > 0 ? `${driverCount} driver${driverCount !== 1 ? 's' : ''} age +1` : 'No drivers'}</span>
-      </div>`;
+      <div class="round-progress-wrap"><div class="round-progress-bar" id="season-clock-bar" style="width:${seasonPct}%"></div></div>
+      <div class="season-clock-stats">
+        <span>${completedThisSeason.length} championship${completedThisSeason.length !== 1 ? 's' : ''} completed</span>
+        <span>${titles} title${titles !== 1 ? 's' : ''}</span>
+        <span>${G.activeChampionships.length} in progress</span>
+        <span>Salaries due: ${totalSalary > 0 ? '$' + formatNumber(totalSalary) : 'none'}</span>
+      </div>
+    </div>`;
 
-    html += `
-      <div class="end-season-confirm">
-        <div class="confirm-title">Confirm End Season ${G.season}?</div>
-        <div class="confirm-details">${confirmRows}</div>
-        <div class="confirm-actions">
-          <button class="btn btn-danger" id="confirm-end-season-btn">End Season ${G.season}</button>
-          <button class="btn" id="cancel-end-season-btn">Cancel</button>
-        </div>
-      </div>`;
-  } else {
-    // Normal state
-    const endSeasonTooltip = canEnd ? '' : 'title="Complete at least one championship first"';
-    html += `
-      <div class="end-season-bar">
-        <div class="end-season-info">
-          <div class="end-season-label">Season ${G.season}</div>
-          <div class="end-season-sub">${completedThisSeason.length} championship${completedThisSeason.length !== 1 ? 's' : ''} completed this season${abandonList.length > 0 ? ` · ${abandonList.length} in progress` : ''}</div>
-        </div>
-        <button class="btn end-season-btn ${canEnd ? '' : 'disabled'}"
-          id="open-end-season-btn" ${canEnd ? '' : 'disabled'} ${endSeasonTooltip}>
-          End Season
-        </button>
-      </div>`;
+  // ── Last season results
+  const summary = G.lastSeasonSummary;
+  if (summary && summary.results && summary.results.length > 0) {
+    html += `<div class="section-header">SEASON ${summary.season} RESULTS</div><div class="season-results">`;
+    summary.results.forEach(r => {
+      const def = getChampionshipById(r.definitionId);
+      html += `<div class="sr-row"><span class="sr-pos ${r.finalPosition === 1 ? 'win' : r.finalPosition <= 3 ? 'podium' : ''}">P${r.finalPosition || '?'}</span>
+        <span class="sr-name">${def ? def.name : r.definitionId}</span><span class="sr-class">${r.classId || ''}</span>
+        <span class="sr-prize">+$${formatNumber(r.prizeEarned || 0)}</span></div>`;
+    });
+    html += '</div>';
   }
+  const _seasonSummary = summary ? summary.driverChanges : null;
 
   // ── Driver season summary (shown after end season)
   if (_seasonSummary && _seasonSummary.length > 0) {
-    html += `<div class="section-header">DRIVER CHANGES — SEASON ${G.season - 1}</div>
+    html += `<div class="section-header">DRIVER CHANGES — SEASON ${summary.season}</div>
       <div class="season-driver-summary">`;
 
     _seasonSummary.forEach(rec => {
@@ -1272,36 +1248,6 @@ function renderPrestige() {
 
   container.innerHTML = html;
 
-  // Events — open confirmation
-  const openBtn = container.querySelector('#open-end-season-btn');
-  if (openBtn) {
-    openBtn.addEventListener('click', () => {
-      _confirmingEndSeason = true;
-      renderPrestige();
-    });
-  }
-
-  // Events — confirm end season
-  const confirmBtn = container.querySelector('#confirm-end-season-btn');
-  if (confirmBtn) {
-    confirmBtn.addEventListener('click', () => {
-      const result = endSeason();
-      _confirmingEndSeason = false;
-      if (!result.ok) { addNotification(result.msg, 'error'); }
-      else { _seasonSummary = result.driverChanges; }
-      renderPrestige();
-    });
-  }
-
-  // Events — cancel end season
-  const cancelBtn = container.querySelector('#cancel-end-season-btn');
-  if (cancelBtn) {
-    cancelBtn.addEventListener('click', () => {
-      _confirmingEndSeason = false;
-      renderPrestige();
-    });
-  }
-
   // Events — hard reset
   const openResetBtn = container.querySelector('#open-hard-reset-btn');
   if (openResetBtn) {
@@ -1316,7 +1262,6 @@ function renderPrestige() {
     doResetBtn.addEventListener('click', () => {
       resetGame();
       _confirmingReset = false;
-      _seasonSummary = null;
       switchTab('garage');
     });
   }
@@ -1331,6 +1276,11 @@ function renderPrestige() {
 
 }
 
+function formatClock(sec) {
+  const s = Math.ceil(sec);
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+}
+
 // ─── Fast UI Refresh (HUD only — no DOM reconstruction) ─────────────────────
 
 function fastRefresh() {
@@ -1339,6 +1289,7 @@ function fastRefresh() {
     renderNotifications();
     updateGarageLive();
     updateChampLive();
+    updateSeasonLive();
     updateSponsorsLive();
   } catch (e) {
     console.error('[fastRefresh] error:', e);
@@ -1398,6 +1349,16 @@ function updateGarageLive() {
 }
 
 // ─── Targeted in-place championship updates ───────────────────────────────────
+
+let _seasonRenderSig = 0;
+function updateSeasonLive() {
+  if (_activeTab !== 'prestige') return;
+  if (_seasonRenderSig !== G.season) { _seasonRenderSig = G.season; renderPrestige(); return; }
+  const t = document.getElementById('season-clock-time');
+  if (t) t.textContent = formatClock(getSeasonTimeLeft());
+  const bar = document.getElementById('season-clock-bar');
+  if (bar) bar.style.width = (100 - getSeasonTimeLeft() / SEASON_LENGTH_SEC * 100) + '%';
+}
 
 let _champRenderSig = '';
 function updateChampLive() {

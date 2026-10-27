@@ -442,6 +442,9 @@ const PRIZE_FACTORS = [1, 0.8, 0.66, 0.55, 0.46, 0.39, 0.33, 0.28, 0.24, 0.2, 0.
 // End-of-championship bonus by final standing, as a share of (P1 round prize × rounds)
 const STANDING_BONUS = [0.5, 0.3, 0.2, 0.1, 0.05];
 
+// Every season lasts this long in real time and ends automatically
+const SEASON_LENGTH_SEC = 3600;
+
 const FIELD_SIZE = 12;          // AI rivals per class in a championship
 const FIELD_SPREAD = 0.36;      // AI ratings span fieldStrength × (1 ± spread/2)
 const MULTICLASS_STEP = 15;     // field strength added per class tier above the series' lowest class

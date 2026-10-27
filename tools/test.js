@@ -19,10 +19,12 @@ function setup(opts) {
 function finishChamp(g, champId, carId) {
   const r = g.run(`enterChampionship('${champId}', '${carId}')`);
   assert(r.ok, 'enter failed: ' + r.msg);
+  g.run(`setAutoRenew('${carId}', false)`);
   for (let i = 0; i < 200 && g.run(`G.activeChampionships.some(e => e.carId === '${carId}')`); i++) g.tickFor(10, 10);
   assert(!g.run(`G.activeChampionships.some(e => e.carId === '${carId}')`), 'championship did not finish');
 }
 
+const SEASON_SEC = g => g.run('SEASON_LENGTH_SEC');
 const driver = (g, id) => g.run(`G.drivers.find(d => d.id === '${id}')`);
 
 test('LP goes to the driver who completed the championship, not the current one', () => {
@@ -38,8 +40,8 @@ test('LP goes to the driver who completed the championship, not the current one'
 
 test('Offline completion credits the driver who raced', () => {
   const { g, a, b, car } = setup();
-  g.run(`assignDriver('${a}', '${car}'); enterChampionship('gt4_regional', '${car}'); G.lastSave = Date.now();`);
-  g.advance(3600e3);
+  g.run(`assignDriver('${a}', '${car}'); enterChampionship('gt4_regional', '${car}'); setAutoRenew('${car}', false); G.lastSave = Date.now();`);
+  g.advance(20 * 60e3);
   g.run(`applyOfflineProgress()`);
   assert(g.run(`G.completedChampionships.length`) === 1, 'offline should complete championship');
   g.run(`assignDriver('${b}', '${car}'); endSeason();`);
@@ -104,6 +106,41 @@ test('Completed championship records final position and pays standings bonus', (
   const c = g.run('G.completedChampionships[0]');
   assert(c.finalPosition === 1, 'maxed car should win GT4 Cup, got P' + c.finalPosition);
   assert(c.prizeEarned > 2000 * 8 * 0.5, 'prize should include standings bonus');
+});
+
+test('Season ends automatically when the clock runs out', () => {
+  const { g, a, car } = setup();
+  g.run(`assignDriver('${a}', '${car}')`);
+  g.tickFor(SEASON_SEC(g) + 5, 5);
+  assert(g.run('G.season') === 2, 'should be season 2, got ' + g.run('G.season'));
+  assert(g.run('G.lastSeasonSummary.season') === 1, 'summary recorded');
+  assert(g.run('getSeasonTimeLeft()') > SEASON_SEC(g) - 10, 'new season clock started');
+});
+
+test('Championships that would not finish before season end cannot be entered', () => {
+  const { g, a, car } = setup();
+  g.run(`assignDriver('${a}', '${car}')`);
+  g.tickFor(SEASON_SEC(g) - 5 * 60, 10);      // 5 minutes left, GT4 Cup needs 8
+  const r = g.run(`enterChampionship('gt4_regional', '${car}')`);
+  assert(!r.ok && /time/.test(r.msg), 'should be rejected for time');
+});
+
+test('Auto-renew keeps a car racing across championships and seasons', () => {
+  const { g, a, car } = setup();
+  g.run(`assignDriver('${a}', '${car}'); enterChampionship('gt4_regional', '${car}')`);
+  g.tickFor(SEASON_SEC(g) + 20 * 60, 5);
+  const done = g.run('G.completedChampionships.length');
+  assert(done >= 8, 'expected 7 per season plus more in season 2, got ' + done);
+  assert(g.run(`G.activeChampionships.some(e => e.carId === '${car}')`), 'still racing in season 2');
+});
+
+test('Offline progress replays seasons and auto-renewals', () => {
+  const { g, a, car } = setup();
+  g.run(`assignDriver('${a}', '${car}'); enterChampionship('gt4_regional', '${car}'); G.lastSave = Date.now();`);
+  g.advance(3 * 3600e3);
+  g.run('applyOfflineProgress()');
+  assert(g.run('G.season') === 4, 'three seasons should pass, season=' + g.run('G.season'));
+  assert(g.run('G.completedChampionships.length') >= 20, 'auto-renewed championships while offline');
 });
 
 let failed = 0;

@@ -88,22 +88,19 @@ var BOT = {
 };
 `);
 
-let lastSeasonEnd = g.now();
+let lastSeason = 1;
 let lastEarned = 0;
 for (let s = 1; s <= HOURS * 3600; s++) {
   g.tickFor(1);
   if (s % 5 === 0) g.run('BOT.step()');
 
-  // End the season when all championships are done, or after 3h
-  const st = g.run(`({ can: canEndSeason(), active: G.activeChampionships.length })`);
-  const since = g.now() - lastSeasonEnd;
-  if (st.can && since > 1800e3 && (st.active === 0 || since > 3 * 3600e3)) {
-    const season = g.run('G.season');
-    g.run('endSeason()');
-    lastSeasonEnd = g.now();
-    const sum = g.run(`({ m: Math.round(G.money), rep: G.reputation,
-      cars: G.cars.map(c => c.classId).join(' '), lic: G.drivers.map(d => d.licenses.join('/')).join(' | ') })`);
-    console.log(`${fmtTime()}  -- season ${season} ended: $${sum.m.toLocaleString('en')} REP ${sum.rep} | cars ${sum.cars} | licenses ${sum.lic}`);
+  // Seasons end on their own; log each one
+  const season = g.run('G.season');
+  if (season !== lastSeason) {
+    lastSeason = season;
+    const sum = g.run(`({ m: Math.round(G.money), rep: G.reputation, res: (G.lastSeasonSummary.results || []).map(r => r.classId + ' P' + r.finalPosition).join(' '),
+      lic: G.drivers.map(d => d.licenses.join('/')).join(' | ') })`);
+    console.log(`${fmtTime()}  -- season ${season - 1} ended: $${sum.m.toLocaleString('en')} REP ${sum.rep} | ${sum.res} | licenses ${sum.lic}`);
   }
   if (s % 3600 === 0) {
     const e = g.run('G.totalEarned'), sp = g.run('Math.round(calcTotalIncomePerSec())');

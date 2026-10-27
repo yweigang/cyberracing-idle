@@ -29,6 +29,7 @@ function createDefaultState() {
         upgrades: { engine: 0, aero: 0, tyres: 0, brakes: 0, reliability: 0 },
         driverId: null,
         championshipId: null,
+        autoRenew: null,
       },
     ],
     drivers: [],
@@ -36,6 +37,8 @@ function createDefaultState() {
     completedChampionships: [],
     champCompletions: {},      // { champId: totalCount } — persists across season resets
     seasonEndCount: 0,         // increments each time endSeason() is called
+    seasonStartTime: Date.now(),
+    lastSeasonSummary: null,   // result of the most recent endSeason(), for the Season panel
     prestige: {
       totalResets: 0,
       prestigeCount: 0,        // increments each time doPrestige() is called
@@ -165,6 +168,7 @@ function buyCar(classId) {
     upgrades: { engine: 0, aero: 0, tyres: 0, brakes: 0, reliability: 0 },
     driverId: null,
     championshipId: null,
+    autoRenew: null,
   });
   return { ok: true, carId: id };
 }
@@ -197,7 +201,25 @@ function checkChampionshipPrerequisite(champDef) {
   return ids.some(id => hasCompletedChampionship(id));
 }
 
-function enterChampionship(definitionId, carId) {
+// ─── Season Clock ─────────────────────────────────────────────────────────────
+
+function getSeasonEndTime() {
+  return G.seasonStartTime + SEASON_LENGTH_SEC * 1000;
+}
+
+function getSeasonTimeLeft(at = Date.now()) {
+  return Math.max(0, (getSeasonEndTime() - at) / 1000);
+}
+
+function getChampionshipDuration(champDef) {
+  return champDef.rounds * champDef.roundDurationSec;
+}
+
+function fitsInSeason(champDef, at = Date.now()) {
+  return getChampionshipDuration(champDef) <= getSeasonTimeLeft(at);
+}
+
+function enterChampionship(definitionId, carId, at = Date.now()) {
   const champDef = getChampionshipById(definitionId);
   if (!champDef) return { ok: false, msg: 'Unknown championship.' };
 
@@ -219,6 +241,7 @@ function enterChampionship(definitionId, carId) {
 
   if (car.championshipId !== null) return { ok: false, msg: 'Car already in a championship.' };
   if (!car.driverId) return { ok: false, msg: 'Assign a driver first.' };
+  if (!fitsInSeason(champDef, at)) return { ok: false, msg: 'Not enough time left this season.' };
   if (G.money < champDef.entryFee) return { ok: false, msg: 'Not enough money for entry fee.' };
 
   G.money -= champDef.entryFee;
@@ -229,7 +252,7 @@ function enterChampionship(definitionId, carId) {
     carId,
     currentRound: 0,
     maxRounds: champDef.rounds,
-    roundStartTime: Date.now(),
+    roundStartTime: at,
     roundDurationSec: champDef.roundDurationSec,
     repEarned: 0,
     prizeEarned: 0,
@@ -238,11 +261,12 @@ function enterChampionship(definitionId, carId) {
     results: [],
     lastRound: null,
     field: generateField(champDef, car.classId),
-    startedAt: Date.now(),
+    startedAt: at,
   };
 
   G.activeChampionships.push(entry);
   car.championshipId = entry.id;
+  car.autoRenew = definitionId;
   return { ok: true, entryId: entry.id };
 }
 
@@ -252,9 +276,17 @@ function withdrawFromChampionship(entryId) {
 
   const entry = G.activeChampionships[idx];
   const car = G.cars.find(c => c.id === entry.carId);
-  if (car) car.championshipId = null;
+  if (car) { car.championshipId = null; car.autoRenew = null; }
 
   G.activeChampionships.splice(idx, 1);
+  return { ok: true };
+}
+
+function setAutoRenew(carId, on) {
+  const car = G.cars.find(c => c.id === carId);
+  if (!car) return { ok: false, msg: 'Car not found.' };
+  const entry = G.activeChampionships.find(e => e.id === car.championshipId);
+  car.autoRenew = on ? (entry ? entry.definitionId : car.autoRenew) : null;
   return { ok: true };
 }
 
@@ -892,6 +924,18 @@ function _migrateDriverLicenses() {
   });
 }
 
+// Saves from before the season clock start a fresh season timer
+function _migrateSeasonClock() {
+  if (!G.seasonStartTime) G.seasonStartTime = G.lastSave || Date.now();
+  if (G.lastSeasonSummary === undefined) G.lastSeasonSummary = null;
+  G.cars.forEach(c => {
+    if (c.autoRenew === undefined) {
+      const entry = G.activeChampionships.find(e => e.id === c.championshipId);
+      c.autoRenew = entry ? entry.definitionId : null;
+    }
+  });
+}
+
 // Championships entered before the race engine get a rival field and standings
 function _migrateRaceEntries() {
   G.activeChampionships.forEach(entry => {
@@ -927,10 +971,6 @@ function _migrateStaff() {
 }
 
 // ─── End Season ───────────────────────────────────────────────────────────────
-
-function canEndSeason() {
-  return G.completedChampionships.some(c => c.season === G.season);
-}
 
 // Driver and class for a completed championship. Records from before driverId was
 // stored fall back to the car's current driver.
@@ -999,7 +1039,10 @@ function _awardSeasonLP() {
 }
 
 function endSeason() {
-  if (!canEndSeason()) return { ok: false, msg: 'Complete at least one championship first.' };
+  const endedSeason = G.season;
+  const seasonResults = G.completedChampionships
+    .filter(c => c.season === endedSeason)
+    .map(c => ({ definitionId: c.definitionId, classId: c.classId, finalPosition: c.finalPosition, prizeEarned: c.prizeEarned }));
 
   // 1. Evaluate all active sponsor contracts
   evaluateSponsorsAtSeasonEnd();
@@ -1075,7 +1118,10 @@ function endSeason() {
   G.season++;
   G.seasonEndCount = (G.seasonEndCount || 0) + 1;
 
-  addNotification(`Season ${G.season - 1} ended. Season ${G.season} begins!`, 'success');
+  G.seasonStartTime = getSeasonEndTime();
+
+  G.lastSeasonSummary = { season: endedSeason, driverChanges, results: seasonResults };
+  addNotification(`Season ${endedSeason} ended. Season ${G.season} begins!`, 'success');
   return { ok: true, driverChanges };
 }
 
@@ -1148,7 +1194,7 @@ function addNotification(msg, type = 'info') {
 function tick(deltaMs) {
   const deltaSec = deltaMs / 1000;
 
-  // Passive income from all cars
+  // Passive sponsor income
   const income = calcTotalIncomePerSec() * deltaSec;
   G.money += income;
   G.totalEarned += income;
@@ -1161,27 +1207,55 @@ function tick(deltaMs) {
     }
   });
 
-  // Championship round progression
-  const now = Date.now();
-  G.activeChampionships.forEach(entry => {
-    if ((now - entry.roundStartTime) / 1000 < entry.roundDurationSec) return;
-    const champDef = getChampionshipById(entry.definitionId);
-    entry.roundStartTime = now;
-    const r = runChampionshipRound(entry);
-    const tag = `${champDef.shortName} R${entry.currentRound}/${entry.maxRounds}${r.wet ? ' (wet)' : ''}`;
-    if (r.dns)      addNotification(`${tag}: did not start — no driver.`, 'error');
-    else if (r.dnf) addNotification(`${tag}: DNF — mechanical failure.`, 'error');
-    else addNotification(`${tag}: finished P${r.pos} · +$${formatNumber(r.prize)} · +${r.rep} REP`, r.pos <= 3 ? 'success' : 'info');
+  advanceWorld(Date.now());
+}
 
-    if (entry.currentRound >= entry.maxRounds) {
-      const fin = finishChampionship(entry);
-      const title = fin.finalPos === 1 ? '🏆 CHAMPIONS!' : `finished P${fin.finalPos} overall`;
-      addNotification(`${champDef.name}: ${title}${fin.bonusCash ? ` +$${formatNumber(fin.bonusCash)} standings bonus` : ''}`, fin.finalPos <= 3 ? 'success' : 'info');
+let _quietNotifications = false;
+function _notify(msg, type) { if (!_quietNotifications) addNotification(msg, type); }
+
+// Advance championships, auto-renewals and the season clock up to time `now`
+function advanceWorld(now) {
+  // Rounds due before the season ends are raced first
+  const roundCutoff = Math.min(now, getSeasonEndTime());
+  G.activeChampionships.forEach(entry => {
+    const champDef = getChampionshipById(entry.definitionId);
+    while (!entry._completed && entry.roundStartTime + entry.roundDurationSec * 1000 <= roundCutoff) {
+      entry.roundStartTime += entry.roundDurationSec * 1000;
+      const r = runChampionshipRound(entry);
+      const tag = `${champDef.shortName} R${entry.currentRound}/${entry.maxRounds}${r.wet ? ' (wet)' : ''}`;
+      if (r.dns)      _notify(`${tag}: did not start — no driver.`, 'error');
+      else if (r.dnf) _notify(`${tag}: DNF — mechanical failure.`, 'error');
+      else _notify(`${tag}: finished P${r.pos} · +$${formatNumber(r.prize)} · +${r.rep} REP`, r.pos <= 3 ? 'success' : 'info');
+
+      if (entry.currentRound >= entry.maxRounds) {
+        const fin = finishChampionship(entry);
+        entry._finishedAt = entry.roundStartTime;
+        const title = fin.finalPos === 1 ? '🏆 CHAMPIONS!' : `finished P${fin.finalPos} overall`;
+        _notify(`${champDef.name}: ${title}${fin.bonusCash ? ` +$${formatNumber(fin.bonusCash)} standings bonus` : ''}`, fin.finalPos <= 3 ? 'success' : 'info');
+      }
     }
   });
-
-  // Remove completed championship entries
+  const finished = G.activeChampionships.filter(e => e._completed);
   G.activeChampionships = G.activeChampionships.filter(e => !e._completed);
+
+  // Auto-renew: re-enter the same series right after finishing, if it still fits
+  finished.forEach(entry => _tryAutoRenew(G.cars.find(c => c.id === entry.carId), entry._finishedAt));
+  // Cars still waiting (e.g. short on the entry fee) retry quietly
+  G.cars.forEach(car => _tryAutoRenew(car, now, true));
+
+  if (now >= getSeasonEndTime()) {
+    endSeason();
+    G.cars.forEach(car => _tryAutoRenew(car, G.seasonStartTime));
+    if (now >= getSeasonEndTime()) advanceWorld(now);   // more than one season elapsed
+  }
+}
+
+function _tryAutoRenew(car, at, quiet = false) {
+  if (!car || !car.autoRenew || car.championshipId) return;
+  const res = enterChampionship(car.autoRenew, car.id, at);
+  if (!res.ok && !quiet && res.msg !== 'Not enough time left this season.') {
+    _notify(`${car.name}: auto-renew paused — ${res.msg}`, 'error');
+  }
 }
 
 // ─── Offline Progress ────────────────────────────────────────────────────────
@@ -1196,23 +1270,30 @@ function applyOfflineProgress() {
   G.money += income;
   G.totalEarned += income;
 
-  // Advance championships round by round
-  let offlineRounds = 0, offlineTitles = 0;
-  const offlineEnd = G.lastSave + elapsed * 1000;
-  G.activeChampionships.forEach(entry => {
-    let roundEnd = entry.roundStartTime + entry.roundDurationSec * 1000;
-    while (roundEnd <= offlineEnd && !entry._completed) {
-      runChampionshipRound(entry);
-      offlineRounds++;
-      entry.roundStartTime = roundEnd;
-      if (entry.currentRound >= entry.maxRounds && finishChampionship(entry).finalPos === 1) offlineTitles++;
-      roundEnd += entry.roundDurationSec * 1000;
-    }
-  });
-  if (offlineRounds > 0) {
-    addNotification(`While you were away: ${offlineRounds} rounds raced${offlineTitles ? `, ${offlineTitles} title${offlineTitles > 1 ? 's' : ''} won` : ''}.`, 'info');
+  // Time beyond the offline cap is frozen: shift all clocks forward by it
+  const frozenMs = Math.max(0, now - G.lastSave - elapsed * 1000);
+  if (frozenMs > 0) {
+    G.seasonStartTime += frozenMs;
+    G.activeChampionships.forEach(e => { e.roundStartTime += frozenMs; });
   }
-  G.activeChampionships = G.activeChampionships.filter(e => !e._completed);
+
+  // Replay rounds, auto-renewals and season ends in order
+  const titlesBefore = G.completedChampionships.filter(c => c.finalPosition === 1).length;
+  const seasonBefore = G.season;
+  _quietNotifications = true;
+  try {
+    for (let t = G.lastSave + frozenMs; t < now; t = Math.min(now, t + 5000)) advanceWorld(Math.min(now, t + 5000));
+  } finally {
+    _quietNotifications = false;
+  }
+  const titles = G.completedChampionships.filter(c => c.finalPosition === 1).length - titlesBefore;
+  const seasons = G.season - seasonBefore;
+  const parts = [];
+  if (titles > 0) parts.push(`${titles} title${titles > 1 ? 's' : ''} won`);
+  if (seasons > 0) parts.push(`${seasons} season${seasons > 1 ? 's' : ''} completed`);
+  if (parts.length) addNotification(`While you were away: ${parts.join(', ')}.`, 'info');
+
+  return elapsed;  G.activeChampionships = G.activeChampionships.filter(e => !e._completed);
 
   return elapsed;
 }
@@ -1242,6 +1323,7 @@ function loadGame() {
     _migrateSingleSeater();
     _migrateDriverLicenses();
     _migrateRaceEntries();
+    _migrateSeasonClock();
     return true;
   } catch (e) {
     console.warn('Load failed:', e);
@@ -1278,6 +1360,12 @@ function _migrateSponsors() {
 function resetGame() {
   localStorage.removeItem(SAVE_KEY);
   G = createDefaultState();
+  _setupNewGame();
+}
+
+function _setupNewGame() {
+  const res = scoutDriver('C');
+  if (res.ok) assignDriver(res.driver.id, G.cars[0].id);
 }
 
 // ─── Formatting Helpers ───────────────────────────────────────────────────────
@@ -1306,6 +1394,7 @@ function initGame() {
   const loaded = loadGame();
   if (!loaded) {
     G = createDefaultState();
+    _setupNewGame();
   } else {
     const elapsed = applyOfflineProgress();
     if (elapsed > 5) {
