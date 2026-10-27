@@ -80,11 +80,11 @@ test('A round produces a position, points, prize and standings', () => {
   assert(st.reduce((n, x) => n + x.points, 0) === 25 + 18 + 15 + 12 + 10 + 8 + 6 + 4 + 2 + 1, 'all points awarded once');
 });
 
-test('Better cars finish higher on average', () => {
+test('Better drivers finish higher on average', () => {
   const { g, a, car } = setup();
   g.run(`assignDriver('${a}', '${car}')`);
-  const avg = lv => g.run(`(() => {
-    UPGRADE_ORDER.forEach(u => G.cars[0].upgrades[u] = ${lv});
+  const avg = skill => g.run(`(() => {
+    G.drivers.forEach(d => DRIVER_STAT_KEYS.forEach(k => d[k] = ${skill}));
     let sum = 0;
     for (let k = 0; k < 20; k++) {
       enterChampionship('gt4_regional', G.cars[0].id);
@@ -95,13 +95,13 @@ test('Better cars finish higher on average', () => {
     }
     return sum / 20;
   })()`);
-  const slow = avg(0), fast = avg(8);
-  assert(fast < slow - 3, `expected lv8 (${fast}) well ahead of lv0 (${slow})`);
+  const slow = avg(10), fast = avg(40);
+  assert(fast < slow - 3, `expected skill 40 (${fast}) well ahead of skill 10 (${slow})`);
 });
 
 test('Completed championship records final position and pays standings bonus', () => {
   const { g, a, car } = setup();
-  g.run(`assignDriver('${a}', '${car}'); UPGRADE_ORDER.forEach(u => G.cars[0].upgrades[u] = 12);`);
+  g.run(`assignDriver('${a}', '${car}'); G.pitCrew.level = 20; G.drivers.forEach(d => DRIVER_STAT_KEYS.forEach(k => d[k] = 90));`);
   finishChamp(g, 'gt4_regional', car);
   const c = g.run('G.completedChampionships[0]');
   assert(c.finalPosition === 1, 'maxed car should win GT4 Cup, got P' + c.finalPosition);
@@ -145,7 +145,7 @@ test('Offline progress replays seasons and auto-renewals', () => {
 
 test('Two GT4 Cup titles earn the GT3 license', () => {
   const { g, a, car } = setup();
-  g.run(`assignDriver('${a}', '${car}'); UPGRADE_ORDER.forEach(u => G.cars[0].upgrades[u] = 12);`);
+  g.run(`assignDriver('${a}', '${car}'); G.pitCrew.level = 20; G.drivers.forEach(d => DRIVER_STAT_KEYS.forEach(k => d[k] = 90));`);
   finishChamp(g, 'gt4_regional', car);
   assert(driver(g, a).licensePoints.GT3 === 25, 'title pays 25 GT3 LP, got ' + driver(g, a).licensePoints.GT3);
   assert(!driver(g, a).licenses.includes('GT3'), 'one title is not enough');
@@ -182,7 +182,7 @@ test('Sponsor targets track this season and end the contract when missed', () =>
   const { g, a, car } = setup();
   g.run(`G.sponsors[0] = Object.assign(generateSponsor('regional'), { target: { type: 'round_podiums', count: 3 }, seasonsRemaining: 2 })`);
   assert(g.run('getSponsorTargetProgress(G.sponsors[0].target).have') === 0, 'no podiums yet');
-  g.run(`assignDriver('${a}', '${car}'); UPGRADE_ORDER.forEach(u => G.cars[0].upgrades[u] = 12);`);
+  g.run(`assignDriver('${a}', '${car}'); G.pitCrew.level = 20; G.drivers.forEach(d => DRIVER_STAT_KEYS.forEach(k => d[k] = 90));`);
   finishChamp(g, 'gt4_regional', car);
   assert(g.run('getSponsorTargetProgress(G.sponsors[0].target).have') >= 3, 'podiums counted from results');
   const m = g.run('G.money');
@@ -196,7 +196,7 @@ test('Sponsor targets track this season and end the contract when missed', () =>
 test('Sponsor tiers open up with results', () => {
   const { g, a, car } = setup();
   assert(g.run('getAvailableSponsorTiers().join()') === 'regional', 'only regional at start');
-  g.run(`assignDriver('${a}', '${car}'); UPGRADE_ORDER.forEach(u => G.cars[0].upgrades[u] = 12);`);
+  g.run(`assignDriver('${a}', '${car}'); G.pitCrew.level = 20; G.drivers.forEach(d => DRIVER_STAT_KEYS.forEach(k => d[k] = 90));`);
   finishChamp(g, 'gt4_regional', car);
   assert(g.run('getAvailableSponsorTiers().includes("national")'), 'podium finish unlocks national');
 });
@@ -204,9 +204,9 @@ test('Sponsor tiers open up with results', () => {
 test('Selling a car refunds part of its value and frees the slot', () => {
   const { g, a, car } = setup();
   g.run(`G.reputation = 1000; upgradeGarage(); buyCar('GT3'); assignDriver('${a}', '${car}');`);
-  g.run(`G.cars[0].upgrades.engine = 2`);
+  g.run(`G.cars[0].upgrades.reliability = 2`);
   const value = g.run(`getCarSellValue(G.cars[0])`);
-  assert(value === Math.floor(10000 * 0.5 + (1000 + 1800) * 0.3), 'value = 50% price + 30% upgrades, got ' + value);
+  assert(value === Math.floor(10000 * 0.5 + (1200 + 2280) * 0.3), 'value = 50% price + 30% preparation, got ' + value);
   const m = g.run('G.money');
   assert(g.run(`sellCar('${car}').ok`), 'sell works');
   assert(g.run('G.money') - m === value && g.run('G.cars.length') === 1, 'refund paid and car removed');
@@ -216,7 +216,8 @@ test('Selling a car refunds part of its value and frees the slot', () => {
 
 test('Prestige pays PP for results and resets upgrades but keeps drivers', () => {
   const { g, a, car } = setup();
-  g.run(`assignDriver('${a}', '${car}'); UPGRADE_ORDER.forEach(u => G.cars[0].upgrades[u] = 12);`);
+  g.run(`assignDriver('${a}', '${car}'); G.pitCrew.level = 20; G.drivers.forEach(d => DRIVER_STAT_KEYS.forEach(k => d[k] = 90));`);
+  g.run('G.cars[0].upgrades.reliability = 5');
   assert(!g.run('canPrestige()'), 'nothing earned yet');
   for (let i = 0; i < 10; i++) {
     if (!g.run("fitsInSeason(getChampionshipById('gt4_regional'))")) g.run('endSeason()');
@@ -226,7 +227,8 @@ test('Prestige pays PP for results and resets upgrades but keeps drivers', () =>
   assert(pp >= 20, 'ten GT4 titles should be worth at least 20 PP, got ' + pp);
   const res = g.run('doPrestige()');
   assert(res.ok && g.run('G.prestigePoints') === pp, 'PP granted');
-  assert(g.run('G.cars[0].upgrades.engine') === 0 && g.run('G.cars[0].upgrades.reliability') === 2, 'upgrades reset, 2 reliability kept');
+  assert(g.run('G.cars[0].upgrades.reliability') === 2 && g.run('G.cars[0].setupChamps') === 0, '2 preparation levels kept, setup reset');
+  assert(g.run('G.pitCrew.level') === 0 && g.run('G.pitCrew.size') === 1, 'pit crew rebuilt');
   assert(g.run('G.cars.length') === 1 && g.run('G.cars[0].classId') === 'GT4', 'back to one GT4');
   assert(g.run('G.cars[0].driverId') === a && g.run('G.money') === 5000, 'driver back in the GT4, $5k');
   assert(g.run('G.sponsors.every(s => s === null)'), 'sponsor contracts end');
@@ -241,9 +243,10 @@ test('Prestige shop items apply their effects', () => {
   assert(g.run(`calcCarRating(G.cars[0])`) > before, 'wind tunnel raises rating');
   assert(g.run(`(() => { const m = G.money; scoutDriver('B'); return m - G.money; })()`) === 5000, 'scouting is half price');
   g.run(`G.reputation = 1000; G.money = 1e9; upgradeGarage(); upgradeGarage(); buyCar('GT3'); buyCar('GT4');
-    G.cars[1].upgrades.engine = 9; G.prestige.lastPrestigeAt = 0; G.reputation = 50000; doPrestige();`);
+    G.cars[1].upgrades.reliability = 9; G.pitCrew.level = 15; G.prestige.lastPrestigeAt = 0; G.reputation = 50000; doPrestige();`);
   assert(g.run('G.cars.map(c => c.classId).sort().join()') === 'GT3,GT4', 'dev token keeps the GT3, plus a GT4');
-  assert(g.run(`G.cars.find(c => c.classId === 'GT3').upgrades.engine`) === 1, 'kept car resets to head-start level');
+  assert(g.run(`G.cars.find(c => c.classId === 'GT3').upgrades.reliability`) === 2, 'kept car keeps 2 preparation levels');
+  assert(g.run('G.pitCrew.level') === 2, 'head start rebuilds the crew at level 2');
   assert(g.run(`buyPrestigeItem('legend_contract').ok`) && g.run(`G.drivers.some(d => d.tier === 'L')`), 'legend signed');
   g.run('endSeason()');
   assert(!g.run(`G.drivers.some(d => d.tier === 'L')`), 'legend leaves at season end');
@@ -255,14 +258,16 @@ test('Team HQ is locked until 8k REP, then levels apply their effects', () => {
   assert(!g.run(`buyHQ('simulator').ok`), 'locked at 0 REP');
   g.run('G.reputation = 8000');
   const rating = g.run('calcCarRating(G.cars[0])');
-  const upg = g.run(`getEffectiveUpgradeCost('engine', 0, 'GT4')`);
+  const upg = g.run(`getEffectiveUpgradeCost('reliability', 0, 'GT4')`);
+  const crew = g.run('getPitCrewLevelCost()');
   const spons = g.run('calcSponsorIncomePerSec()');
   const m = g.run('G.money');
   ['simulator', 'composites', 'hospitality'].forEach(id => assert(g.run(`buyHQ('${id}').ok`), id));
   assert(m - g.run('G.money') === 2000000 + 1500000 + 1000000, 'level 1 costs paid');
   assert(g.run(`getHQCost('simulator')`) === 3200000, 'cost grows x1.6');
   assert(Math.abs(g.run('calcCarRating(G.cars[0])') / rating - 1.015) < 1e-9, 'simulator +1.5% rating');
-  assert(g.run(`getEffectiveUpgradeCost('engine', 0, 'GT4')`) === Math.floor(upg * 0.97), 'composites -3% upgrade cost');
+  assert(g.run(`getEffectiveUpgradeCost('reliability', 0, 'GT4')`) === Math.floor(upg * 0.97), 'training centre -3% preparation cost');
+  assert(g.run('getPitCrewLevelCost()') === Math.floor(crew * 0.97), 'training centre -3% crew cost');
   assert(Math.abs(g.run('calcSponsorIncomePerSec()') / spons - 1.05) < 1e-9, 'hospitality +5% sponsors');
 });
 
@@ -282,7 +287,7 @@ test('Targeted sponsors hold back part of their income until the target is met',
   const share = g.run('SPONSOR_UPFRONT_SHARE');
   assert(Math.round(g.run('G.money') - m) === Math.round((8 + 100 * share) * 100), 'family full + upfront share paid now');
   assert(Math.round(g.run('G.sponsors[0].heldBack')) === Math.round(100 * (1 - share) * 100), 'rest held back');
-  g.run(`assignDriver('${a}', '${car}'); UPGRADE_ORDER.forEach(u => G.cars[0].upgrades[u] = 12);`);
+  g.run(`assignDriver('${a}', '${car}'); G.pitCrew.level = 20; G.drivers.forEach(d => DRIVER_STAT_KEYS.forEach(k => d[k] = 90));`);
   finishChamp(g, 'gt4_regional', car);
   const held = g.run('G.sponsors[0].heldBack'), m2 = g.run('G.money');
   g.run('evaluateSponsorsAtSeasonEnd()');
@@ -300,7 +305,7 @@ test('A missed target forfeits the held-back income', () => {
 
 test('Sponsor tiers start over after a prestige', () => {
   const { g, a, car } = setup();
-  g.run(`assignDriver('${a}', '${car}'); UPGRADE_ORDER.forEach(u => G.cars[0].upgrades[u] = 12);`);
+  g.run(`assignDriver('${a}', '${car}'); G.pitCrew.level = 20; G.drivers.forEach(d => DRIVER_STAT_KEYS.forEach(k => d[k] = 90));`);
   finishChamp(g, 'gt4_regional', car);
   assert(g.run('getAvailableSponsorTiers().includes("national")'), 'national after a podium');
   g.advance(1000);
@@ -354,7 +359,7 @@ test('A short endurance lineup races slower and retires more often', () => {
 test('Race drivers earn LP and XP; reserves earn nothing', () => {
   const { g, ids, car } = lineupSetup();
   g.run(`G.cars[0].classId = 'GT4'; G.drivers.forEach(d => { d.licenses = ['GT4']; d.licensePoints = {}; });
-    UPGRADE_ORDER.forEach(u => G.cars[0].upgrades[u] = 14);`);
+    G.pitCrew.level = 20; G.drivers.forEach(d => DRIVER_STAT_KEYS.forEach(k => d[k] = 90));`);
   g.run(`assignDriver('${ids[0]}', '${car}'); assignDriver('${ids[1]}', '${car}', 'co');`);
   finishChamp(g, 'gt4_regional', car);
   assert(driver(g, ids[0]).licensePoints.GT3 > 0, 'lead earns LP');
@@ -381,6 +386,49 @@ test('The team is called Cyberracing by default and can be renamed', () => {
   assert(g.run(`renameTeam('x'.repeat(40)).name.length`) === g.run('TEAM_NAME_MAX_LENGTH'), 'length capped');
   g.run(`delete G.teamName; saveGame(); loadGame();`);
   assert(g.run('G.teamName') === 'Cyberracing', 'old saves get the default name');
+});
+
+test('Cars are balanced: only setup knowledge and the pit crew change the car side', () => {
+  const { g, a, car } = setup();
+  g.run(`assignDriver('${a}', '${car}')`);
+  const base = g.run('calcCarBaseRating(G.cars[0])');
+  assert(base === 100, 'GT4 runs at its class rating, got ' + base);
+  g.run('G.cars[0].setupChamps = 10');
+  assert(Math.abs(g.run('calcCarBaseRating(G.cars[0])') - 103) < 1e-9, 'setup bonus capped at +3%');
+  const r0 = g.run(`calcCarRating(G.cars[0], 'endurance')`);
+  assert(g.run('trainPitCrew().ok') && g.run('G.pitCrew.level') === 1, 'crew trains');
+  assert(Math.abs(g.run(`calcCarRating(G.cars[0], 'endurance')`) / r0 - 1.01) < 1e-9, 'crew level adds 1% in endurance');
+  assert(Math.abs(g.run('getPitCrewBonus(G.cars[0], "sprint")') - 0.004) < 1e-9, 'and 0.4% in sprint');
+});
+
+test('The pit crew covers its size in cars, highest class first; others get half', () => {
+  const { g } = setup();
+  g.run(`G.reputation = 1000; upgradeGarage(); buyCar('GT3'); G.pitCrew.level = 10;`);
+  const gt3 = g.run(`G.cars.find(c => c.classId === 'GT3').id`);
+  assert(g.run('getCrewCoveredCarIds().join()') === gt3, 'GT3 covered first');
+  assert(Math.abs(g.run('getPitCrewBonus(G.cars[0], "endurance")') - 0.05) < 1e-9, 'uncovered GT4 gets half');
+  assert(g.run('expandPitCrew().ok') && Math.abs(g.run('getPitCrewBonus(G.cars[0], "endurance")') - 0.1) < 1e-9, 'bigger crew covers both');
+});
+
+test('Old saves get their performance upgrades refunded in full', () => {
+  const { g } = setup();
+  g.run(`G.money = 0; delete G.pitCrew; G.cars[0].upgrades = { engine: 2, aero: 1, tyres: 0, brakes: 0, reliability: 11 }; saveGame(); loadGame();`);
+  const expected = 1000 + 1800 + 800 + g.run(`getUpgradeCost('reliability', 9, 'GT4') + getUpgradeCost('reliability', 10, 'GT4')`);
+  assert(g.run('G.money') === expected, `refund ${g.run('G.money')} vs ${expected}`);
+  assert(g.run('JSON.stringify(G.cars[0].upgrades)') === '{"reliability":9}', 'only preparation left, capped at 9');
+  assert(g.run('G.pitCrew.level') === 0, 'pit crew added');
+  g.run('saveGame(); loadGame();');
+  assert(g.run('G.money') === expected, 'refund paid once');
+});
+
+test('Banked XP trains drivers at season end', () => {
+  const { g, a } = setup();
+  const before = g.run(`DRIVER_STAT_KEYS.reduce((s, k) => s + G.drivers.find(d => d.id === '${a}')[k], 0)`);
+  g.run(`G.drivers.find(d => d.id === '${a}').xp = XP_PER_STAT_POINT * 3 + 50; G.drivers.find(d => d.id === '${a}').age = 30; endSeason();`);
+  const d = driver(g, a);
+  const after = g.run(`DRIVER_STAT_KEYS.reduce((s, k) => s + G.drivers.find(d => d.id === '${a}')[k], 0)`);
+  assert(after - before >= 3, `3 stat points trained (${before} -> ${after})`);
+  assert(d.xp === 50, 'leftover XP kept, got ' + d.xp);
 });
 
 let failed = 0;

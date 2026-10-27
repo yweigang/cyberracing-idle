@@ -223,63 +223,54 @@ const LICENSE_CONFIG = {
   // prestigeMultipliers: { 0: 1.0, 1: 1.5, 2: 2.0, 3: 3.0 },  // TBD
 };
 
-// ─── Upgrades ─────────────────────────────────────────────────────────────────
+// ─── Balance of Performance ───────────────────────────────────────────────────
 
+// Cars in a class are balanced: performance comes from drivers, the pit crew and a
+// small setup bonus. Reliability (car preparation) is the only per-car upgrade.
 const UPGRADES = {
-  engine: {
-    id: 'engine',
-    name: 'Engine',
-    icon: '⚙',
-    maxLevel: 20,
-    baseCost: 1000,
-    costMult: 1.8,
-    description: '+2% rating/level',
-    ratingPctPerLevel: 2,
-  },
-  aero: {
-    id: 'aero',
-    name: 'Aerodynamics',
-    icon: '◈',
-    maxLevel: 20,
-    baseCost: 800,
-    costMult: 1.7,
-    description: '+1.5% rating/level',
-    ratingPctPerLevel: 1.5,
-  },
-  tyres: {
-    id: 'tyres',
-    name: 'Tyres',
-    icon: '◎',
-    maxLevel: 20,
-    baseCost: 600,
-    costMult: 1.6,
-    description: '+1.5% rating/level',
-    ratingPctPerLevel: 1.5,
-  },
-  brakes: {
-    id: 'brakes',
-    name: 'Brakes',
-    icon: '▣',
-    maxLevel: 20,
-    baseCost: 700,
-    costMult: 1.65,
-    description: '+1% rating/level',
-    ratingPctPerLevel: 1,
-  },
   reliability: {
     id: 'reliability',
-    name: 'Reliability',
+    name: 'Car Preparation',
     icon: '◆',
-    maxLevel: 20,
+    maxLevel: 9,
     baseCost: 1200,
     costMult: 1.9,
-    description: '-1% DNF chance/level; +1% rating/level after Lv 10',
+    description: '-1% DNF chance/level',
     // DNF chance per round: 10% at Lv 0, -1% per level, floor 1% (doubled in endurance)
-    ratingPctPerLevel: 0,
   },
 };
 
-const UPGRADE_ORDER = ['engine', 'aero', 'tyres', 'brakes', 'reliability'];
+const UPGRADE_ORDER = ['reliability'];
+
+// Performance upgrades from before BoP; their spend is refunded when an old save loads
+const LEGACY_UPGRADES = {
+  engine: { baseCost: 1000, costMult: 1.8 },
+  aero:   { baseCost: 800,  costMult: 1.7 },
+  tyres:  { baseCost: 600,  costMult: 1.6 },
+  brakes: { baseCost: 700,  costMult: 1.65 },
+};
+
+// Setup knowledge: each completed championship in a car adds a little, up to a cap
+const SETUP_BONUS_PER_CHAMP = 0.005;
+const SETUP_BONUS_MAX = 0.03;
+
+// Team-wide pit crew. Level adds rating to every car it covers (more in endurance,
+// where stops matter); size is how many cars it covers fully, the rest get a share.
+const PIT_CREW = {
+  maxLevel: 20,
+  levelBaseCost: 5000,
+  levelCostMult: 1.55,
+  sprintPctPerLevel: 0.4,
+  endurancePctPerLevel: 1.0,
+  maxSize: 8,
+  sizeBaseCost: 25000,
+  sizeCostMult: 3,
+  uncoveredShare: 0.5,
+};
+
+// Driver development: XP turns into stat points at season end
+const XP_PER_STAT_POINT = 400;
+const TRAINING_CEILING_BONUS = 10;   // trained stats can exceed the tier ceiling by this much
 
 // ─── Championships ─────────────────────────────────────────────────────────────
 
@@ -296,7 +287,7 @@ const CHAMPIONSHIPS = [
     prerequisiteChampionship: null,
     repPerRound: 20,
     format: 'sprint',
-    fieldStrength: { GT4: 115 },
+    fieldStrength: { GT4: 105 },
     prizeMult: 4,
     wetChance: 0.15,
     color: '#4a8fff',
@@ -314,7 +305,7 @@ const CHAMPIONSHIPS = [
     prerequisiteChampionship: 'gt4_regional',
     repPerRound: 40,
     format: 'sprint',
-    fieldStrength: { GT3: 170 },
+    fieldStrength: { GT3: 160 },
     prizeMult: 5,
     wetChance: 0.2,
     color: '#00aaff',
@@ -333,7 +324,7 @@ const CHAMPIONSHIPS = [
     repPerRound: 70,
     format: 'endurance',
     lineupSize: 2,
-    fieldStrength: { GT3: 185, LMP2: 300, HYPERCAR: 345 },
+    fieldStrength: { GT3: 170, LMP2: 270, HYPERCAR: 335 },
     prizeMult: 10,
     wetChance: 0.15,
     color: '#00d4ff',
@@ -352,7 +343,7 @@ const CHAMPIONSHIPS = [
     repPerRound: 80,
     format: 'endurance',
     lineupSize: 3,
-    fieldStrength: { GT3: 195, LMP3: 225, LMP2: 295 },
+    fieldStrength: { GT3: 180, LMP3: 212, LMP2: 265 },
     prizeMult: 15,
     wetChance: 0.25,
     color: '#ff8800',
@@ -371,7 +362,7 @@ const CHAMPIONSHIPS = [
     repPerRound: 120,
     format: 'endurance',
     lineupSize: 3,
-    fieldStrength: { GT3: 210, LMP2: 310, HYPERCAR: 360 },
+    fieldStrength: { GT3: 195, LMP2: 285, HYPERCAR: 350 },
     prizeMult: 20,
     wetChance: 0.2,
     color: '#ff4400',
@@ -390,7 +381,7 @@ const CHAMPIONSHIPS = [
     prerequisiteChampionship: null,
     repPerRound: 20,
     format: 'sprint',
-    fieldStrength: { F4: 150 },
+    fieldStrength: { F4: 140 },
     prizeMult: 2,
     wetChance: 0.2,
     color: '#ff6699',
@@ -409,7 +400,7 @@ const CHAMPIONSHIPS = [
     prerequisiteChampionship: 'formula_regional',
     repPerRound: 40,
     format: 'sprint',
-    fieldStrength: { F3: 220 },
+    fieldStrength: { F3: 195 },
     prizeMult: 4,
     wetChance: 0.2,
     color: '#ff4488',
@@ -428,7 +419,7 @@ const CHAMPIONSHIPS = [
     prerequisiteChampionship: 'formula_3_championship',
     repPerRound: 80,
     format: 'sprint',
-    fieldStrength: { F2: 310 },
+    fieldStrength: { F2: 265 },
     prizeMult: 5,
     wetChance: 0.2,
     color: '#ff2266',
@@ -447,7 +438,7 @@ const CHAMPIONSHIPS = [
     prerequisiteChampionship: 'formula_2_championship',
     repPerRound: 100,
     format: 'sprint',
-    fieldStrength: { F1: 420 },
+    fieldStrength: { F1: 365 },
     prizeMult: 4,
     wetChance: 0.15,
     color: '#ff0055',
@@ -558,12 +549,12 @@ const PRESTIGE_ITEMS = [
     id: 'head_start',
     name: 'Season Head-Start',
     cost: 50,
-    description: 'Cars restart each reset with +1 level on every part (per purchase).',
+    description: 'The pit crew restarts each reset with +2 levels (per purchase).',
     maxPurchases: 5,
   },
   {
     id: 'wind_tunnel',
-    name: 'Wind Tunnel Program',
+    name: 'Performance Programme',
     cost: 75,
     description: '+3% race rating for every car, permanently.',
     maxPurchases: 10,
@@ -586,7 +577,7 @@ const PRESTIGE_ITEMS = [
     id: 'dev_token',
     name: 'Development Token',
     cost: 200,
-    description: 'Each token keeps one more car through resets (highest class first). Its upgrades still reset.',
+    description: 'Each token keeps one more car through resets (highest class first). Its preparation and setup still reset.',
     maxPurchases: 5,
   },
   {
@@ -624,9 +615,9 @@ const HQ_FACILITIES = [
   },
   {
     id: 'composites',
-    name: 'Composites Factory',
-    icon: '🏭',
-    description: '-3% car upgrade costs per level.',
+    name: 'Crew Training Centre',
+    icon: '🔧',
+    description: '-3% pit crew and car preparation costs per level.',
     baseCost: 1500000,
     costMult: 1.6,
     maxLevel: 15,
@@ -841,7 +832,7 @@ const TP_STAT_LABELS = {
 const TP_STAT_DESCS = {
   motivation:         'Boosts all driver pace multipliers',
   strategy:           'Extra REP per championship round',
-  budgetManagement:   'Reduces upgrade costs',
+  budgetManagement:   'Reduces pit crew and car preparation costs',
   sponsorshipNetwork: 'Increases all sponsor income',
   talentEye:          'Reduces driver scouting costs',
 };
@@ -871,7 +862,7 @@ const RE_STAT_LABELS = {
   dataAnalysis:           'Data Analysis',
 };
 const RE_STAT_DESCS = {
-  setupMastery:           'Boosts all upgrade multipliers on this car',
+  setupMastery:           'Raises the race rating of this car',
   reliabilityEngineering: 'Boosts reliability multiplier on this car',
   pitWallStrategy:        'Increases championship income bonus for this car',
   driverCoach:            'Increases assigned driver XP and License Point gain',

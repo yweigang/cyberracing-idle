@@ -27,7 +27,8 @@ function createDefaultState() {
         id: 'car_1',
         classId: 'GT4',
         name: 'GT4 #1',
-        upgrades: { engine: 0, aero: 0, tyres: 0, brakes: 0, reliability: 0 },
+        upgrades: { reliability: 0 },
+        setupChamps: 0,
         driverId: null,
         coDriverIds: [],
         championshipId: null,
@@ -48,7 +49,7 @@ function createDefaultState() {
       lastPrestigeAt: 0,       // timestamp of the last reset (results after it earn PP)
       repAtLastPrestige: 0,
       permanentBonuses: {
-        incomeMultiplier: 1.0,   // race rating multiplier (Wind Tunnel Program)
+        incomeMultiplier: 1.0,   // race rating multiplier (Performance Programme)
         scoutDiscount: 0,
         devTokens: 0,
         sponsorBonus: 0,
@@ -63,20 +64,68 @@ function createDefaultState() {
     raceEngineers: {},
     licensePtMultiplier: LICENSE_CONFIG.defaultMultiplier,
     hq: { simulator: 0, composites: 0, hospitality: 0 },
+    pitCrew: { level: 0, size: 1 },
     notifications: [],
   };
 }
 
 // ─── Car Performance ──────────────────────────────────────────────────────────
 
-// Class base rating raised by upgrades (each level adds a % of the base).
-// Reliability above Lv 10 adds 1% per level.
+// Setup knowledge bonus a car has built up from completed championships
+function getSetupBonus(car) {
+  return Math.min(SETUP_BONUS_MAX, (car.setupChamps || 0) * SETUP_BONUS_PER_CHAMP);
+}
+
+// Balanced class rating plus the car's setup knowledge
 function calcCarBaseRating(car) {
   const cls = getCarClassById(car.classId);
-  const u = car.upgrades;
-  const pct = UPGRADE_ORDER.reduce((sum, id) => sum + u[id] * UPGRADES[id].ratingPctPerLevel, 0)
-    + Math.max(0, u.reliability - 10);
-  return (cls ? cls.baseRating : 100) * (1 + pct / 100);
+  return (cls ? cls.baseRating : 100) * (1 + getSetupBonus(car));
+}
+
+// ─── Pit Crew ─────────────────────────────────────────────────────────────────
+
+// Cars the crew covers fully: highest classes first
+function getCrewCoveredCarIds() {
+  return [...G.cars].sort((a, b) => getCarClassById(b.classId).tier - getCarClassById(a.classId).tier)
+    .slice(0, G.pitCrew.size).map(c => c.id);
+}
+
+// Rating bonus (fraction) the pit crew gives a car in a race format
+function getPitCrewBonus(car, format = 'sprint') {
+  const pct = format === 'endurance' ? PIT_CREW.endurancePctPerLevel : PIT_CREW.sprintPctPerLevel;
+  const share = getCrewCoveredCarIds().includes(car.id) ? 1 : PIT_CREW.uncoveredShare;
+  return G.pitCrew.level * pct / 100 * share;
+}
+
+// Discounts from the Team Principal and the Crew Training Centre
+function _crewCostMult() {
+  return getTPBonuses().upgradeCostMult * (1 - getHQLevel('composites') * 0.03);
+}
+
+function getPitCrewLevelCost() {
+  return Math.floor(PIT_CREW.levelBaseCost * Math.pow(PIT_CREW.levelCostMult, G.pitCrew.level) * _crewCostMult());
+}
+
+function getPitCrewSizeCost() {
+  return Math.floor(PIT_CREW.sizeBaseCost * Math.pow(PIT_CREW.sizeCostMult, G.pitCrew.size - 1) * _crewCostMult());
+}
+
+function trainPitCrew() {
+  if (G.pitCrew.level >= PIT_CREW.maxLevel) return { ok: false, msg: 'Pit crew fully trained.' };
+  const cost = getPitCrewLevelCost();
+  if (G.money < cost) return { ok: false, msg: 'Not enough money.' };
+  G.money -= cost;
+  G.pitCrew.level++;
+  return { ok: true, level: G.pitCrew.level };
+}
+
+function expandPitCrew() {
+  if (G.pitCrew.size >= PIT_CREW.maxSize) return { ok: false, msg: 'Pit crew at full size.' };
+  const cost = getPitCrewSizeCost();
+  if (G.money < cost) return { ok: false, msg: 'Not enough money.' };
+  G.money -= cost;
+  G.pitCrew.size++;
+  return { ok: true, size: G.pitCrew.size };
 }
 
 // Weighted driver skill (0–100) for a race format and conditions
@@ -146,7 +195,7 @@ function calcLineupSkill(car, format = 'sprint', wet = false, lineupSize = 1) {
 function calcCarRating(car, format = 'sprint', wet = false, lineupSize = 1) {
   const reB = getREBonuses(car.id);
   const driverMult = 1 + calcLineupSkill(car, format, wet, lineupSize) / 100 + getTPBonuses().paceMult;
-  return calcCarBaseRating(car) * driverMult * (1 + reB.setupBonus)
+  return calcCarBaseRating(car) * driverMult * (1 + reB.setupBonus) * (1 + getPitCrewBonus(car, format))
     * G.prestige.permanentBonuses.incomeMultiplier * (1 + getHQLevel('simulator') * 0.015);
 }
 
@@ -256,7 +305,8 @@ function buyCar(classId) {
     id,
     classId,
     name: `${cls.name} #${count}`,
-    upgrades: { engine: 0, aero: 0, tyres: 0, brakes: 0, reliability: 0 },
+    upgrades: { reliability: 0 },
+    setupChamps: 0,
     driverId: null,
     coDriverIds: [],
     championshipId: null,
@@ -580,7 +630,10 @@ function finishChampionship(entry) {
     completedAt: Date.now(),
   });
   G.champCompletions[entry.definitionId] = (G.champCompletions[entry.definitionId] || 0) + 1;
-  if (car) car.championshipId = null;
+  if (car) {
+    car.championshipId = null;
+    car.setupChamps = (car.setupChamps || 0) + 1;
+  }
   entry._completed = true;
   return { finalPos, bonusCash, bonusRep, lpGained, lineupCount: lineup.length };
 }
@@ -1013,10 +1066,10 @@ function getREBonuses(carId) {
   };
 }
 
-// Upgrade cost after TP budget management discount
+// Upgrade cost after the Team Principal and Crew Training Centre discounts
 function getEffectiveUpgradeCost(upgradeId, currentLevel, classId) {
   const base = getUpgradeCost(upgradeId, currentLevel, classId);
-  return Math.max(1, Math.floor(base * getTPBonuses().upgradeCostMult * (1 - getHQLevel('composites') * 0.03)));
+  return Math.max(1, Math.floor(base * _crewCostMult()));
 }
 
 function _generateStaff(type, tier) {
@@ -1126,6 +1179,22 @@ function _applyDriverSeasonAging(driver) {
     driver.consistency = Math.max(1, driver.consistency - 1);
   }
   // junior / veteran: no stat change
+}
+
+// Converts banked XP into stat points, half of them into pace. Trained stats can go a
+// little past the tier ceiling.
+function _applyDriverTraining(driver) {
+  const cfg = DRIVER_STAT_CONFIG[driver.tier];
+  if (!cfg) return;
+  const cap = cfg.ceiling + TRAINING_CEILING_BONUS;
+  const points = Math.floor((driver.xp || 0) / XP_PER_STAT_POINT);
+  driver.xp -= points * XP_PER_STAT_POINT;
+  for (let i = 0; i < points; i++) {
+    const open = DRIVER_STAT_KEYS.filter(k => driver[k] < cap);
+    if (!open.length) break;
+    const key = open.includes('pace') && Math.random() < 0.5 ? 'pace' : open[Math.floor(Math.random() * open.length)];
+    driver[key]++;
+  }
 }
 
 function deductSeasonSalaries() {
@@ -1305,7 +1374,17 @@ function endSeason() {
   // 3. LP was awarded per championship; collect it for the summary
   const lpByDriver = _seasonLPByDriver(endedSeason);
 
-  // 4. Age all drivers, apply career stat changes, handle retirements
+  // 4. Award XP (per championship completion; separate from LP)
+  G.completedChampionships
+    .filter(c => c.season === G.season)
+    .forEach(comp => {
+      _champDriverAndClass(comp).driverIds.forEach(driverId => {
+        const driver = G.drivers.find(d => d.id === driverId);
+        if (driver) driver.xp += 100;
+      });
+    });
+
+  // 5. Age all drivers, train XP into stats, apply career stat changes, handle retirements
   // Snapshot stats before changes so we can return a diff for the UI
   const snapshots = G.drivers.map(d => ({
     id: d.id, name: d.name,
@@ -1318,6 +1397,7 @@ function endSeason() {
     d.age = (d.age || 20) + 1;
     if (d.age === 40) addNotification(`${d.name} is in their final seasons.`, 'warning');
     _applyDriverSeasonAging(d);
+    _applyDriverTraining(d);
     if (d.age >= (d.retirementAge || 43)) retirees.push(d.id);
   });
 
@@ -1345,16 +1425,6 @@ function endSeason() {
     _detachDriver(d);
     G.drivers.splice(G.drivers.findIndex(x => x.id === driverId), 1);
   });
-
-  // 5. Award XP (per championship completion; separate from LP)
-  G.completedChampionships
-    .filter(c => c.season === G.season)
-    .forEach(comp => {
-      _champDriverAndClass(comp).driverIds.forEach(driverId => {
-        const driver = G.drivers.find(d => d.id === driverId);
-        if (driver) driver.xp += 100;
-      });
-    });
 
   // 6. Abandon all in-progress championships
   G.activeChampionships.forEach(entry => {
@@ -1462,20 +1532,19 @@ function doPrestige() {
   });
   G.cars = keptCars;
   if (!G.cars.some(c => c.classId === 'GT4')) {
-    G.cars.push({ id: 'car_' + G.nextCarId++, classId: 'GT4', name: 'GT4 #1', upgrades: {}, driverId: null, coDriverIds: [], championshipId: null, autoRenew: null });
+    G.cars.push({ id: 'car_' + G.nextCarId++, classId: 'GT4', name: 'GT4 #1', upgrades: { reliability: 0 }, driverId: null, coDriverIds: [], championshipId: null, autoRenew: null });
   }
 
-  // Upgrades reset to the head-start level (2 reliability levels are kept)
-  const headStart = G.prestige.permanentBonuses.headStartLevels || 0;
+  // Cars keep 2 preparation levels and lose their setup knowledge; the pit crew is
+  // rebuilt at the head-start level
   G.cars.forEach(car => {
-    const oldReli = car.upgrades.reliability || 0;
-    const fresh = {};
-    UPGRADE_ORDER.forEach(id => { fresh[id] = Math.min(UPGRADES[id].maxLevel, headStart); });
-    fresh.reliability = Math.min(20, Math.min(oldReli, 2) + headStart);
-    car.upgrades = fresh;
+    car.upgrades = { reliability: Math.min(car.upgrades.reliability || 0, 2) };
+    car.setupChamps = 0;
     car.championshipId = null;
     car.autoRenew = null;
   });
+  const headStart = G.prestige.permanentBonuses.headStartLevels || 0;
+  G.pitCrew = { level: Math.min(PIT_CREW.maxLevel, headStart * 2), size: 1 };
 
   // Drivers keep their seats only in surviving cars
   G.drivers.forEach(d => { if (d.carId && !G.cars.some(c => c.id === d.carId)) d.carId = null; });
@@ -1649,6 +1718,7 @@ function loadGame() {
     _migrateSeasonClock();
     if (!G.hq) G.hq = { simulator: 0, composites: 0, hospitality: 0 };
     G.cars.forEach(c => { if (!c.coDriverIds) c.coDriverIds = []; }); // saves before driver lineups
+    _migrateBoP();
     return true;
   } catch (e) {
     console.warn('Load failed:', e);
@@ -1679,6 +1749,29 @@ function _migrateSponsors() {
     const existing = Array.isArray(G.sponsors) ? G.sponsors.filter(Boolean) : [];
     G.sponsors = [null, null, null, null, null];
     existing.forEach((s, i) => { if (i < 5) G.sponsors[i] = s; });
+  }
+}
+
+// Saves from before BoP: performance upgrades are removed and their full cost refunded,
+// as are preparation levels above the new cap.
+function _migrateBoP() {
+  if (!G.pitCrew) G.pitCrew = { level: 0, size: 1 };
+  let refund = 0;
+  G.cars.forEach(car => {
+    const u = car.upgrades || {};
+    const cls = getCarClassById(car.classId);
+    const classMult = (cls && cls.upgradeCostMult) || 1;
+    Object.entries(LEGACY_UPGRADES).forEach(([id, def]) => {
+      for (let lvl = 0; lvl < (u[id] || 0); lvl++) refund += Math.floor(def.baseCost * Math.pow(def.costMult, lvl) * classMult);
+    });
+    const reli = u.reliability || 0;
+    for (let lvl = UPGRADES.reliability.maxLevel; lvl < reli; lvl++) refund += getUpgradeCost('reliability', lvl, car.classId);
+    car.upgrades = { reliability: Math.min(reli, UPGRADES.reliability.maxLevel) };
+    if (car.setupChamps === undefined) car.setupChamps = 0;
+  });
+  if (refund > 0) {
+    G.money += refund;
+    addNotification(`Cars now run under Balance of Performance. Car upgrades were refunded: +$${formatNumber(refund)}.`, 'success');
   }
 }
 

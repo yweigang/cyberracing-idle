@@ -128,22 +128,48 @@ var BOT = {
     const carsReady = G.cars.every(c => BOT.rating(c) >= BOT.targetRating(c) * 0.85);
     const reserve = (next && carsReady ? next.baseCost * 0.5 : 0)
       + Math.max(0, ...G.cars.map(c => { const s = BOT.pickSeries(c); return s ? s.entryFee : 0; }));
+    // Spending: car preparation, pit crew training/size and better drivers, by rating
+    // gained per dollar, weighted by how far the cars are below their targets
+    const TIER_RANK = { C: 0, B: 1, A: 2, S: 3, L: 4 };
+    const WANT_TIER = { GT4: 'B', GT3: 'A', LMP3: 'A', LMP2: 'S', HYPERCAR: 'S' };
     for (let k = 0; k < 100; k++) {
       let best = null;
-      G.cars.forEach(car => {
-        const deficit = BOT.targetRating(car) - BOT.rating(car);
-        if (deficit <= 0) return;
-        UPGRADE_ORDER.forEach(u => {
-          if (isUpgradeMaxed(car, u)) return;
-          const cost = getEffectiveUpgradeCost(u, car.upgrades[u], car.classId);
-          const base = getCarClassById(car.classId).baseRating / 100;
-          const gain = u === 'reliability' ? (car.upgrades.reliability < 6 ? 3 * base : 0.5 * base) : UPGRADES[u].ratingPctPerLevel * base;
-          const score = gain / cost * deficit;
-          if (!best || score > best.score) best = { car, u, cost, score };
-        });
+      const consider = (cost, gain, buy) => {
+        const score = gain / cost;
+        if (gain > 0 && (!best || score > best.score)) best = { cost, score, buy };
+      };
+      const deficits = G.cars.map(car => ({ car, def: Math.max(0, BOT.targetRating(car) - BOT.rating(car)) }));
+      deficits.forEach(({ car, def }) => {
+        if (def <= 0) return;
+        const base = getCarClassById(car.classId).baseRating / 100;
+        if (!isUpgradeMaxed(car, 'reliability') && car.upgrades.reliability < 6) {
+          consider(getEffectiveUpgradeCost('reliability', car.upgrades.reliability, car.classId), 3 * base * def, () => buyUpgrade(car.id, 'reliability'));
+        }
+        // Replace the weakest race driver with a scouted driver of the wanted tier
+        const want = WANT_TIER[car.classId];
+        const lic = CLASS_LICENSE_REQUIREMENT[car.classId];
+        const series = BOT.pickSeries(car);
+        const race = getCarLineup(car).slice(0, series ? getLineupSize(series) : 1);
+        const weakest = race.sort((a, b) => calcDriverSkill(a, 'sprint') - calcDriverSkill(b, 'sprint'))[0];
+        if (want && weakest && TIER_RANK[weakest.tier] < TIER_RANK[want] && (TIER_STARTING_LICENSES[want] || []).includes(lic)) {
+          const cost = Math.floor(DRIVER_TIERS[want].scoutCost * getTPBonuses().scoutCostMult * (1 - (G.prestige.permanentBonuses.scoutDiscount || 0))) || 1;
+          consider(cost * 1.5, 20 * base * def / race.length, () => {
+            const wasLead = car.driverId === weakest.id;
+            const r = scoutDriver(want);
+            if (!r.ok) return;
+            unassignDriver(weakest.id);
+            assignDriver(r.driver.id, car.id, wasLead ? 'lead' : 'co');
+          });
+        }
       });
+      const totalDef = deficits.reduce((sum, d) => sum + d.def * getCarClassById(d.car.classId).baseRating / 100, 0);
+      if (G.pitCrew.level < PIT_CREW.maxLevel) consider(getPitCrewLevelCost(), 0.7 * totalDef, () => trainPitCrew());
+      if (G.pitCrew.size < Math.min(PIT_CREW.maxSize, G.cars.length)) {
+        const uncovered = deficits.filter(d => !getCrewCoveredCarIds().includes(d.car.id)).reduce((sum, d) => sum + d.def, 0);
+        consider(getPitCrewSizeCost(), 0.35 * G.pitCrew.level * uncovered, () => expandPitCrew());
+      }
       if (!best || G.money - best.cost < reserve) break;
-      buyUpgrade(best.car.id, best.u);
+      best.buy();
     }
     // Surplus beyond the reserve goes into the cheapest HQ facility
     if (isHQUnlocked()) {

@@ -103,6 +103,35 @@ function renderNotifications() {
 
 // ─── Garage Panel ─────────────────────────────────────────────────────────────
 
+// Team-wide pit crew: training level and how many cars it covers
+function _renderPitCrew() {
+  const crew = G.pitCrew;
+  const levelMaxed = crew.level >= PIT_CREW.maxLevel;
+  const sizeMaxed = crew.size >= PIT_CREW.maxSize;
+  const levelCost = levelMaxed ? 0 : getPitCrewLevelCost();
+  const sizeCost = sizeMaxed ? 0 : getPitCrewSizeCost();
+  const covered = getCrewCoveredCarIds().map(id => G.cars.find(c => c.id === id).name);
+  const sprint = (crew.level * PIT_CREW.sprintPctPerLevel).toFixed(1);
+  const endurance = (crew.level * PIT_CREW.endurancePctPerLevel).toFixed(0);
+  return `
+    <div class="section-header">PIT CREW</div>
+    <div class="pit-crew-bar">
+      <div class="pit-crew-info">
+        <div class="pit-crew-title">Level ${crew.level}/${PIT_CREW.maxLevel} · covers ${crew.size} car${crew.size > 1 ? 's' : ''}</div>
+        <div class="pit-crew-sub">+${sprint}% sprint · +${endurance}% endurance rating. Covered: ${covered.join(', ') || '—'}. Other cars get ${Math.round(PIT_CREW.uncoveredShare * 100)}% of the bonus.</div>
+        <div class="pit-crew-sub">Cars are balanced (BoP): pace comes from drivers, the crew and setup knowledge.</div>
+      </div>
+      <div class="pit-crew-actions">
+        <button class="btn pit-crew-btn" id="crew-train-btn" ${levelMaxed || G.money < levelCost ? 'disabled' : ''}>
+          ${levelMaxed ? 'Fully trained' : `Train — $${formatNumber(levelCost)}`}
+        </button>
+        <button class="btn pit-crew-btn" id="crew-expand-btn" ${sizeMaxed || G.money < sizeCost ? 'disabled' : ''}>
+          ${sizeMaxed ? 'Full size' : `Cover +1 car — $${formatNumber(sizeCost)}`}
+        </button>
+      </div>
+    </div>`;
+}
+
 // Seat rows for a car card: lead, co-drivers, and empty seats with a driver picker
 function _renderLineup(car) {
   const lineup = getCarLineup(car);
@@ -292,6 +321,7 @@ function renderGarage() {
             <div class="car-stats-right">
               <div class="car-rating">★ ${rating}</div>
               <div class="car-mult">car ${baseRating} · driver ×${paceMult.toFixed(2)} · DNF ${dnfPct}%</div>
+              <div class="car-mult">setup +${(getSetupBonus(car) * 100).toFixed(1)}% (max ${SETUP_BONUS_MAX * 100}%) · crew +${(getPitCrewBonus(car) * 100).toFixed(1)}%</div>
               ${endRating !== null ? `<div class="car-mult">endurance ★ ${endRating} with ${Math.min(getCarLineup(car).length, endSize)}/${endSize} drivers · DNF ${Math.round(calcDNFChance(car, 'endurance', endSize) * 100)}%</div>` : ''}
               ${G.cars.length > 1 && !car.championshipId
                 ? `<button class="btn btn-danger sell-car-btn" data-car="${car.id}">${_confirmSellCarId === car.id ? 'Confirm sell' : 'Sell'} $${formatNumber(getCarSellValue(car))}</button>`
@@ -312,7 +342,7 @@ function renderGarage() {
   }
   carsHtml += '</div>';
 
-  container.innerHTML = garageHtml + buyCarsHtml + carsHtml;
+  container.innerHTML = garageHtml + _renderPitCrew() + buyCarsHtml + carsHtml;
 
   // Garage upgrade button
   const garageBtn = container.querySelector('#garage-upgrade-btn');
@@ -352,6 +382,16 @@ function renderGarage() {
   container.querySelectorAll('.upg-btn').forEach(btn => {
     btn.addEventListener('click', () => {
       const result = buyUpgrade(btn.dataset.car, btn.dataset.upg);
+      if (!result.ok) addNotification(result.msg, 'error');
+      renderGarage();
+    });
+  });
+
+  // Pit crew
+  [['#crew-train-btn', trainPitCrew], ['#crew-expand-btn', expandPitCrew]].forEach(([sel, fn]) => {
+    const btn = container.querySelector(sel);
+    if (btn) btn.addEventListener('click', () => {
+      const result = fn();
       if (!result.ok) addNotification(result.msg, 'error');
       renderGarage();
     });
@@ -715,7 +755,7 @@ function renderDrivers() {
           </div>
           <div class="driver-stats-grid">${statsHtml}</div>
           <div class="driver-meta">
-            <span class="driver-xp">XP ${Math.floor(driver.xp)}</span>
+            <span class="driver-xp" title="Banked XP becomes stat points at season end">XP ${Math.floor(driver.xp)} · +${Math.floor(driver.xp / XP_PER_STAT_POINT)} stat pts</span>
             <span class="driver-ret-age">Retires ~${retAge}</span>
           </div>
           ${renderDriverLicenses(driver)}
@@ -1119,7 +1159,7 @@ function renderStaff() {
         <div class="staff-bonuses">
           <span>+${(bonuses.paceMult*100).toFixed(1)}% pace</span>
           <span>+${bonuses.strategyRep} REP/round</span>
-          <span>-${((1-bonuses.upgradeCostMult)*100).toFixed(0)}% upgrades</span>
+          <span>-${((1-bonuses.upgradeCostMult)*100).toFixed(0)}% crew &amp; prep costs</span>
           <span>+${(bonuses.sponsorMult*100).toFixed(1)}% sponsors</span>
           <span>-${((1-bonuses.scoutCostMult)*100).toFixed(0)}% scouting</span>
         </div>
@@ -1167,7 +1207,7 @@ function renderStaff() {
             </div>
             <div class="staff-stats-grid">${statsHtml}</div>
             <div class="staff-bonuses">
-              <span>+${(reB.setupBonus*100).toFixed(0)}% upgrades</span>
+              <span>+${(reB.setupBonus*100).toFixed(0)}% car rating</span>
               <span>+${(reB.reliBonus*100).toFixed(0)}% reliability</span>
               <span>+${(reB.pitBonus*100).toFixed(1)}% income</span>
               <span>+${(reB.coachBonus*100).toFixed(0)}% XP</span>
@@ -1477,7 +1517,7 @@ function formatClock(sec) {
 function _hqEffectText(id) {
   const lvl = getHQLevel(id);
   if (id === 'simulator')   return `+${(lvl * 1.5).toFixed(1)}% race rating`;
-  if (id === 'composites')  return `-${lvl * 3}% upgrade costs`;
+  if (id === 'composites')  return `-${lvl * 3}% crew & prep costs`;
   if (id === 'hospitality') return `+${lvl * 5}% sponsor income`;
   return '';
 }
@@ -1568,6 +1608,12 @@ function updateGarageLive() {
       }
     });
   });
+
+  // Pit crew buttons
+  const trainBtn = document.getElementById('crew-train-btn');
+  if (trainBtn && G.pitCrew.level < PIT_CREW.maxLevel) trainBtn.disabled = G.money < getPitCrewLevelCost();
+  const expandBtn = document.getElementById('crew-expand-btn');
+  if (expandBtn && G.pitCrew.size < PIT_CREW.maxSize) expandBtn.disabled = G.money < getPitCrewSizeCost();
 
   // Garage upgrade button affordability
   const totalSlots  = getGarageSlots(G.garageLevel);

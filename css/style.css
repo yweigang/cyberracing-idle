@@ -1097,6 +1097,24 @@ select { font-family: inherit; }
 }
 .cancel-sign-btn { color: var(--text-2); }
 
+/* ─── Pit crew (Garage) ───────────────────────────────────────────────────── */
+.pit-crew-bar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 12px 16px;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+}
+.pit-crew-info { flex: 1; min-width: 220px; }
+.pit-crew-title { font-size: 14px; font-weight: 600; color: var(--cyan); }
+.pit-crew-sub { font-size: 11px; color: var(--text-2); margin-top: 3px; }
+.pit-crew-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.pit-crew-btn { padding: 6px 12px; font-size: 12px; }
+
 /* ─── Car driver lineup (inline in Garage) ───────────────────────────────── */
 .car-lineup {
   display: flex;
