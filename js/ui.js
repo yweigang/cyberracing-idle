@@ -71,6 +71,63 @@ function renderNotifications() {
 
 // ─── Garage Panel ─────────────────────────────────────────────────────────────
 
+// Largest lineup any series open to this class asks for
+function _maxLineupForClass(classId) {
+  return CHAMPIONSHIPS.filter(c => c.allowedClasses.includes(classId))
+    .reduce((m, c) => Math.max(m, getLineupSize(c)), 1);
+}
+
+// Lineup size that matters for a car right now: its current series, else the largest open to it
+function _lineupSizeForCar(car) {
+  const entry = car.championshipId && G.activeChampionships.find(e => e.id === car.championshipId);
+  return entry ? getLineupSize(getChampionshipById(entry.definitionId)) : _maxLineupForClass(car.classId);
+}
+
+// Seat rows for a car card: lead, co-drivers, and empty seats with a driver picker
+function _renderLineup(car) {
+  const lineup = getCarLineup(car);
+  const enduranceSize = _maxLineupForClass(car.classId);
+  const license = CLASS_LICENSE_REQUIREMENT[car.classId];
+  const candidates = G.drivers.filter(d => d.carId !== car.id && (!license || (d.licenses || []).includes(license)));
+  // The seats the car's series need, plus one spare seat for a reserve
+  const seats = Math.min(MAX_LINEUP, Math.max(enduranceSize, lineup.length + 1));
+  let html = '';
+  for (let i = 0; i < seats; i++) {
+    const d = lineup[i];
+    const role = i === 0 ? 'Lead' : 'Co-driver';
+    if (d) {
+      const s = getCareerStage(d.age || 20);
+      html += `
+        <div class="lineup-seat">
+          <span class="lineup-role">${role}</span>
+          <span class="lineup-name">${d.name}</span>
+          <span class="lineup-stats">Pace ${d.pace} · Fit ${d.fitness} · <span style="color:${s.color}">${s.label}</span></span>
+          ${i > 0 ? `<button class="btn lineup-btn lineup-lead-btn" data-car="${car.id}" data-driver="${d.id}" title="Make lead driver">▲ Lead</button>` : ''}
+          <button class="btn lineup-btn lineup-remove-btn" data-driver="${d.id}" title="Remove from car">✕</button>
+        </div>`;
+    } else {
+      const options = candidates.map(c => {
+        const from = c.carId ? G.cars.find(x => x.id === c.carId) : null;
+        return `<option value="${c.id}">${c.name} · Pace ${c.pace}${from ? ' (from ' + from.name + ')' : ''}</option>`;
+      }).join('');
+      html += `
+        <div class="lineup-seat lineup-empty">
+          <span class="lineup-role">${role}</span>
+          ${options
+            ? `<select class="lineup-add-select" data-car="${car.id}"><option value="">+ Add driver</option>${options}</select>`
+            : `<span class="lineup-none">${i === 0 ? 'No driver' : 'Empty seat'}${license ? ' · needs ' + license + ' license' : ''}</span>`}
+        </div>`;
+    }
+  }
+  const missing = getMissingDrivers(car, enduranceSize);
+  const note = enduranceSize > 1
+    ? (missing > 0
+        ? `<div class="lineup-note warn">⚠ Endurance series want ${enduranceSize} drivers. ${missing} short: the fittest driver double-stints tired and the DNF chance rises ${Math.round(SHORT_LINEUP_DNF_PENALTY * missing * 100)}%.</div>`
+        : `<div class="lineup-note">Endurance stints are shared by ${enduranceSize} drivers; sprint races use the lead driver.</div>`)
+    : (lineup.length > 1 ? `<div class="lineup-note">Sprint series race with the lead driver; co-drivers earn half LP as reserves.</div>` : '');
+  return `<div class="car-lineup">${html}${note}</div>`;
+}
+
 function renderGarage() {
   const container = document.getElementById('panel-garage');
 
@@ -198,6 +255,8 @@ function renderGarage() {
       const paceMult = calcDriverPaceMult(car);
       const rating = Math.round(calcCarRating(car));
       const dnfPct = Math.round(calcDNFChance(car) * 100);
+      const endSize = _lineupSizeForCar(car);
+      const endRating = endSize > 1 ? Math.round(calcCarRating(car, 'endurance', false, endSize)) : null;
 
       carsHtml += `
         <div class="car-card" style="--cls-color: ${cls.color}">
@@ -209,24 +268,19 @@ function renderGarage() {
             <div class="car-stats-right">
               <div class="car-rating">★ ${rating}</div>
               <div class="car-mult">car ${baseRating} · driver ×${paceMult.toFixed(2)} · DNF ${dnfPct}%</div>
+              ${endRating !== null ? `<div class="car-mult">endurance ★ ${endRating} with ${getCarLineup(car).length}/${endSize} drivers · DNF ${Math.round(calcDNFChance(car, 'endurance', endSize) * 100)}%</div>` : ''}
               ${G.cars.length > 1 && !car.championshipId
                 ? `<button class="btn btn-danger sell-car-btn" data-car="${car.id}">${_confirmSellCarId === car.id ? 'Confirm sell' : 'Sell'} $${formatNumber(getCarSellValue(car))}</button>`
                 : ''}
             </div>
           </div>
           <div class="car-meta">
-            <span class="meta-pill ${driver ? 'has-driver' : ''}">
-              ${driver
-                ? (() => {
-                    const s = getCareerStage(driver.age || 20);
-                    return `🏎 ${driver.name} · <span style="color:${s.color}">${s.label} ${s.trajectory}</span> · Pace ${driver.pace}`;
-                  })()
-                : '⚡ No Driver'}
-            </span>
+            ${driver ? '' : '<span class="meta-pill">⚡ No Driver</span>'}
             <span class="meta-pill ${activeChamp ? 'in-champ' : ''}">
               ${activeChamp ? '🏁 ' + champDef.shortName + ' R' + activeChamp.currentRound + '/' + activeChamp.maxRounds : '◯ No Championship'}
             </span>
           </div>
+          ${_renderLineup(car)}
           ${reHtml}
           <div class="upgrades-section">${upgradesHtml}</div>
         </div>`;
@@ -279,6 +333,29 @@ function renderGarage() {
     });
   });
 
+  // Lineup seats
+  container.querySelectorAll('.lineup-add-select').forEach(sel => {
+    sel.addEventListener('change', () => {
+      if (!sel.value) return;
+      const result = assignDriver(sel.value, sel.dataset.car, 'co');
+      if (!result.ok) addNotification(result.msg, 'error');
+      renderGarage();
+    });
+  });
+  container.querySelectorAll('.lineup-lead-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const result = assignDriver(btn.dataset.driver, btn.dataset.car, 'lead');
+      if (!result.ok) addNotification(result.msg, 'error');
+      renderGarage();
+    });
+  });
+  container.querySelectorAll('.lineup-remove-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      unassignDriver(btn.dataset.driver);
+      renderGarage();
+    });
+  });
+
   // Hire / Change RE buttons in car cards
   container.querySelectorAll('.car-re-btn').forEach(btn => {
     btn.addEventListener('click', () => {
@@ -311,7 +388,7 @@ function renderChampionships() {
         ? (isFinalRound ? 'Championship finishing…' : 'Round finishing…')
         : (isFinalRound ? `Final round ends in ${formatTime(remaining)}` : `Next round in ${formatTime(remaining)}`);
       const standingPos = getStandingPosition(entry);
-      const rating = car ? Math.round(calcCarRating(car, champDef.format)) : 0;
+      const rating = car ? Math.round(calcCarRating(car, champDef.format, false, getLineupSize(champDef))) : 0;
       const fieldStr = getFieldStrength(champDef, entry.classId);
 
       activeHtml += `
@@ -382,7 +459,9 @@ function renderChampionships() {
     const fieldClass = selFits ? selCar.classId : champDef.allowedClasses[0];
     const fieldStr = getFieldStrength(champDef, fieldClass);
     const p1Prize = getRoundPrize(champDef, fieldClass);
-    const selRating = selFits ? Math.round(calcCarRating(selCar, champDef.format)) : null;
+    const lineupSize = getLineupSize(champDef);
+    const selRating = selFits ? Math.round(calcCarRating(selCar, champDef.format, false, lineupSize)) : null;
+    const selMissing = selFits ? getMissingDrivers(selCar, lineupSize) : 0;
     const best = G.completedChampionships.filter(c => c.definitionId === champDef.id && c.finalPosition)
       .reduce((m, c) => Math.min(m, c.finalPosition), Infinity);
 
@@ -411,6 +490,7 @@ function renderChampionships() {
           <span>📅 ${champDef.rounds} rounds</span>
           <span>⏱ ${champDef.roundDurationSec}s/round · ${formatClock(getChampionshipDuration(champDef))} total</span>
           <span>${champDef.format === 'endurance' ? '🌙 Endurance' : '⚡ Sprint'}</span>
+          <span>👥 ${lineupSize} driver${lineupSize > 1 ? 's' : ''} per car${selMissing > 0 ? ` · <span class="lineup-short">yours is ${selMissing} short</span>` : ''}</span>
           <span>🌧 ${Math.round((champDef.wetChance || 0) * 100)}% wet</span>
           <span>🏁 Field ★ ${fieldStr}${selRating !== null ? ` · yours ★ ${selRating}` : ''}</span>
           <span>💰 P1 $${formatNumber(p1Prize)}/round</span>
@@ -618,7 +698,12 @@ function renderDrivers() {
           <div class="driver-assign">
             <select class="assign-car-select" data-driver="${driver.id}">
               <option value="">Unassigned</option>
-              ${G.cars.map(c => `<option value="${c.id}" ${driver.carId === c.id ? 'selected' : ''}>${c.name}</option>`).join('')}
+              ${G.cars.map(c => {
+                const seated = getCarLineup(c);
+                const here = driver.carId === c.id;
+                const role = here ? (c.driverId === driver.id ? ' (lead)' : ' (co-driver)') : ` (${seated.length}/${MAX_LINEUP})`;
+                return `<option value="${c.id}" ${here ? 'selected' : ''} ${!here && seated.length >= MAX_LINEUP ? 'disabled' : ''}>${c.name}${role}</option>`;
+              }).join('')}
             </select>
           </div>
           <button class="btn btn-danger fire-driver-btn" data-driver="${driver.id}" title="Release driver">✕</button>
@@ -646,7 +731,7 @@ function renderDrivers() {
       const driverId = e.target.dataset.driver;
       const carId = e.target.value;
       if (carId) {
-        const result = assignDriver(driverId, carId);
+        const result = assignDriver(driverId, carId, 'co');
         if (!result.ok) {
           addNotification(result.msg, 'error');
           renderDrivers(); // reset select to previous state

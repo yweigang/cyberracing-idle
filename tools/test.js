@@ -308,6 +308,63 @@ test('Sponsor tiers start over after a prestige', () => {
   assert(g.run('getAvailableSponsorTiers().join()') === 'regional', 'back to regional after the reset');
 });
 
+// GT3 car with three identical GT3-licensed drivers, ready for IMSA/ELMS
+function lineupSetup() {
+  const g = createGame({ seed: 42 });
+  g.run(`G.money = 1e9; G.reputation = 1e6; G.champCompletions = { gt4_regional: 1, gt_world_challenge: 1 };
+    G.cars[0].classId = 'GT3';
+    for (let i = 0; i < 4; i++) {
+      const d = scoutDriver('B').driver;
+      Object.assign(d, { pace: 30, consistency: 30, tyreManagement: 30, rainSkill: 30, fitness: 50 });
+    }`);
+  const ids = g.run('G.drivers.map(d => d.id)');
+  return { g, ids, car: g.run('G.cars[0].id') };
+}
+
+test('Drivers fill lead and co-driver seats, up to three per car', () => {
+  const { g, ids, car } = lineupSetup();
+  assert(g.run(`assignDriver('${ids[0]}', '${car}', 'co').ok`), 'first driver takes the empty lead seat');
+  g.run(`assignDriver('${ids[1]}', '${car}', 'co'); assignDriver('${ids[2]}', '${car}', 'co');`);
+  assert(g.run('G.cars[0].driverId') === ids[0] && g.run('G.cars[0].coDriverIds.join()') === ids[1] + ',' + ids[2], 'lead + 2 co-drivers');
+  assert(!g.run(`assignDriver('${ids[3]}', '${car}', 'co').ok`), 'a fourth driver does not fit');
+  g.run(`assignDriver('${ids[2]}', '${car}', 'lead')`);
+  assert(g.run('G.cars[0].driverId') === ids[2] && g.run('getCarLineup(G.cars[0]).length') === 3, 'co-driver promoted, old lead stays');
+  g.run(`unassignDriver('${ids[2]}')`);
+  assert(g.run('G.cars[0].driverId') === ids[0] && g.run(`G.drivers.find(d => d.id === '${ids[2]}').carId`) === null, 'next driver takes the lead when the lead leaves');
+});
+
+test('A short endurance lineup races slower and retires more often', () => {
+  const { g, ids, car } = lineupSetup();
+  g.run(`assignDriver('${ids[0]}', '${car}')`);
+  const solo = g.run(`[calcCarRating(G.cars[0], 'endurance', false, 3), calcDNFChance(G.cars[0], 'endurance', 3)]`);
+  assert(Math.abs(g.run(`calcCarRating(G.cars[0], 'sprint')`) - g.run(`calcCarRating(G.cars[0], 'sprint', false, 1)`)) < 1e-9, 'sprint uses the lead only');
+  g.run(`assignDriver('${ids[1]}', '${car}', 'co'); assignDriver('${ids[2]}', '${car}', 'co');`);
+  const full = g.run(`[calcCarRating(G.cars[0], 'endurance', false, 3), calcDNFChance(G.cars[0], 'endurance', 3)]`);
+  assert(full[0] > solo[0], `full lineup is faster (${full[0]} vs ${solo[0]})`);
+  assert(Math.abs(solo[1] / full[1] - 2) < 1e-9, 'two missing drivers double the DNF chance');
+  const equalSolo = g.run(`calcCarRating(G.cars[0], 'endurance', false, 1)`);
+  assert(Math.abs(full[0] - equalSolo) < 1e-9, 'three equal drivers rate like one rested driver');
+});
+
+test('Every driver in the lineup earns LP and XP; reserves earn half LP', () => {
+  const { g, ids, car } = lineupSetup();
+  g.run(`G.cars[0].classId = 'GT4'; G.drivers.forEach(d => { d.licenses = ['GT4']; d.licensePoints = {}; });
+    UPGRADE_ORDER.forEach(u => G.cars[0].upgrades[u] = 14);`);
+  g.run(`assignDriver('${ids[0]}', '${car}'); assignDriver('${ids[1]}', '${car}', 'co');`);
+  finishChamp(g, 'gt4_regional', car);
+  const lead = driver(g, ids[0]).licensePoints.GT3, reserve = driver(g, ids[1]).licensePoints.GT3;
+  assert(lead > 0 && reserve === Math.round(lead / 2), `sprint reserve earns half (${reserve} of ${lead})`);
+  const xpBefore = driver(g, ids[1]).xp;
+  g.run('endSeason()');
+  assert(driver(g, ids[1]).xp >= xpBefore + 100, 'co-driver gets championship XP');
+});
+
+test('Saves from before lineups load with empty co-driver seats', () => {
+  const { g } = setup();
+  g.run(`delete G.cars[0].coDriverIds; saveGame(); loadGame();`);
+  assert(Array.isArray(g.run('G.cars[0].coDriverIds')), 'coDriverIds added on load');
+});
+
 let failed = 0;
 for (const t of tests) {
   try { t.fn(); console.log('PASS', t.name); }

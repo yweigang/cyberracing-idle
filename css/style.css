@@ -1074,6 +1074,46 @@ select { font-family: inherit; }
 }
 .cancel-sign-btn { color: var(--text-2); }
 
+/* ─── Car driver lineup (inline in Garage) ───────────────────────────────── */
+.car-lineup {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 10px;
+}
+.lineup-seat {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px;
+  background: var(--bg-3);
+  border-radius: var(--radius);
+  flex-wrap: wrap;
+}
+.lineup-role {
+  font-size: 9px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--text-3);
+  min-width: 62px;
+}
+.lineup-name  { font-size: 13px; font-weight: 600; color: var(--amber); }
+.lineup-stats { font-size: 11px; color: var(--text-2); flex: 1; }
+.lineup-none  { font-size: 12px; color: var(--text-3); font-style: italic; flex: 1; }
+.lineup-add-select {
+  flex: 1;
+  min-width: 0;
+  background: var(--bg-4);
+  border: 1px solid var(--border-hi);
+  color: var(--text-1);
+  padding: 3px 8px;
+  border-radius: var(--radius);
+  font-size: 12px;
+}
+.lineup-btn { padding: 3px 8px; font-size: 11px; flex-shrink: 0; }
+.lineup-note { font-size: 11px; color: var(--text-3); padding: 2px 2px 0; }
+.lineup-note.warn, .lineup-short { color: var(--amber); }
+
 /* ─── Car RE bar (inline in Garage) ─────────────────────────────────────── */
 .car-re-bar {
   display: flex;

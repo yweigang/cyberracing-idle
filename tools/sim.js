@@ -32,8 +32,13 @@ var BOT = {
   pickSeries(car) {
     const cs = BOT.champsFor(car).sort((a, b) => getFieldStrength(a, car.classId) - getFieldStrength(b, car.classId));
     if (!cs.length) return null;
-    const ok = cs.filter(c => calcCarRating(car, c.format) >= getFieldStrength(c, car.classId) * 1.05);
+    const ok = cs.filter(c => calcCarRating(car, c.format, false, getLineupSize(c)) >= getFieldStrength(c, car.classId) * 1.05);
     return ok.length ? ok[ok.length - 1] : cs[0];
+  },
+  // Rating in the series the car would race next, with its current lineup
+  rating(car) {
+    const c = BOT.pickSeries(car);
+    return c ? calcCarRating(car, c.format, false, getLineupSize(c)) : calcCarRating(car);
   },
   // Rating the car should reach for the hardest series open to it
   targetRating(car) {
@@ -86,6 +91,20 @@ var BOT = {
         if (tier && G.money >= DRIVER_TIERS[tier].scoutCost * 2) { const r = scoutDriver(tier); if (r.ok) assignDriver(r.driver.id, car.id); }
       }
     });
+    // Co-drivers: fill the lineup the car's series asks for, scouting if nobody licensed is free
+    G.cars.forEach(car => {
+      const series = BOT.pickSeries(car);
+      const size = series ? getLineupSize(series) : 1;
+      const lic = CLASS_LICENSE_REQUIREMENT[car.classId];
+      while (car.driverId && getCarLineup(car).length < size) {
+        const free = G.drivers.find(d => !d.carId && d.licenses.includes(lic));
+        if (free) { assignDriver(free.id, car.id, 'co'); continue; }
+        const tier = { GT3: 'B', LMP3: 'A', LMP2: 'S', HYPERCAR: 'S' }[car.classId];
+        if (!tier || G.money < DRIVER_TIERS[tier].scoutCost * 2) break;
+        const r = scoutDriver(tier);
+        if (!r.ok || !assignDriver(r.driver.id, car.id, 'co').ok) break;
+      }
+    });
     // A second GT4 early on for more prize money and LP
     if (G.cars.length < getGarageSlots(G.garageLevel) && G.cars.filter(c => c.classId === 'GT4').length < 2 && G.money > 30000) buyCar('GT4');
     if (G.cars.length >= getGarageSlots(G.garageLevel) && G.cars.length < 2) upgradeGarage();
@@ -106,13 +125,13 @@ var BOT = {
     }
     // Upgrades: most rating per dollar, weighted by how far the car is below its target
     // Save for the next class only once the current cars are close to competitive
-    const carsReady = G.cars.every(c => calcCarRating(c) >= BOT.targetRating(c) * 0.85);
+    const carsReady = G.cars.every(c => BOT.rating(c) >= BOT.targetRating(c) * 0.85);
     const reserve = (next && carsReady ? next.baseCost * 0.5 : 0)
       + Math.max(0, ...G.cars.map(c => { const s = BOT.pickSeries(c); return s ? s.entryFee : 0; }));
     for (let k = 0; k < 100; k++) {
       let best = null;
       G.cars.forEach(car => {
-        const deficit = BOT.targetRating(car) - calcCarRating(car);
+        const deficit = BOT.targetRating(car) - BOT.rating(car);
         if (deficit <= 0) return;
         UPGRADE_ORDER.forEach(u => {
           if (isUpgradeMaxed(car, u)) return;
@@ -157,7 +176,7 @@ for (let s = 1; s <= HOURS * 3600; s++) {
     lastSeason = season;
     const sum = g.run(`({ m: Math.round(G.money), rep: G.reputation, sp: Math.round(calcTotalIncomePerSec()),
       res: (G.lastSeasonSummary.results || []).map(r => r.classId + ' P' + r.finalPosition).join(' '),
-      cars: G.cars.map(c => c.classId + '★' + Math.round(calcCarRating(c))).join(' '),
+      cars: G.cars.map(c => c.classId + '★' + Math.round(BOT.rating(c)) + 'x' + getCarLineup(c).length).join(' '),
       hq: HQ_FACILITIES.map(f => getHQLevel(f.id)).join('/') })`);
     const earned = g.run('G.totalEarned');
     console.log(`${fmtTime()}  -- S${season - 1}: earned $${Math.round(earned - lastEarned).toLocaleString('en')} | bank $${sum.m.toLocaleString('en')} | REP ${sum.rep} | sponsors $${sum.sp}/s | HQ ${sum.hq} | ${sum.cars}`);

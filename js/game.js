@@ -28,6 +28,7 @@ function createDefaultState() {
         name: 'GT4 #1',
         upgrades: { engine: 0, aero: 0, tyres: 0, brakes: 0, reliability: 0 },
         driverId: null,
+        coDriverIds: [],
         championshipId: null,
         autoRenew: null,
       },
@@ -88,20 +89,49 @@ function calcDriverSkill(driver, format, wet) {
   return pace * 0.7 + driver.tyreManagement * 0.3;
 }
 
-// Full race rating of a car with its current driver and staff
-function calcCarRating(car, format = 'sprint', wet = false) {
-  const driver = car.driverId ? G.drivers.find(d => d.id === car.driverId) : null;
+// Drivers seated in a car: the lead driver first, then co-drivers
+function getCarLineup(car) {
+  return [car.driverId, ...(car.coDriverIds || [])]
+    .map(id => id && G.drivers.find(d => d.id === id)).filter(Boolean);
+}
+
+// Drivers a series expects per car (sprint series race with the lead driver only)
+function getLineupSize(champDef) {
+  return (champDef && champDef.lineupSize) || 1;
+}
+
+// Seats a lineup of the given size is short
+function getMissingDrivers(car, lineupSize = 1) {
+  return Math.max(0, lineupSize - getCarLineup(car).length);
+}
+
+// Stint-averaged skill of the first `lineupSize` drivers. Stints nobody covers are
+// driven by the fittest driver at reduced, fatigued skill.
+function calcLineupSkill(car, format = 'sprint', wet = false, lineupSize = 1) {
+  const lineup = getCarLineup(car).slice(0, lineupSize);
+  if (!lineup.length) return 0;
+  const stints = lineup.map(d => calcDriverSkill(d, format, wet));
+  const fittest = lineup.reduce((a, b) => ((b.fitness || 0) > (a.fitness || 0) ? b : a));
+  const fatigued = calcDriverSkill(fittest, format, wet) * (FATIGUE_SKILL_BASE + (fittest.fitness || 0) / FATIGUE_FITNESS_DIV);
+  while (stints.length < lineupSize) stints.push(fatigued);
+  return stints.reduce((a, b) => a + b, 0) / lineupSize;
+}
+
+// Full race rating of a car with its current lineup and staff
+function calcCarRating(car, format = 'sprint', wet = false, lineupSize = 1) {
   const reB = getREBonuses(car.id);
-  const driverMult = 1 + calcDriverSkill(driver, format, wet) / 100 + getTPBonuses().paceMult;
+  const driverMult = 1 + calcLineupSkill(car, format, wet, lineupSize) / 100 + getTPBonuses().paceMult;
   return calcCarBaseRating(car) * driverMult * (1 + reB.setupBonus)
     * G.prestige.permanentBonuses.incomeMultiplier * (1 + getHQLevel('simulator') * 0.015);
 }
 
-// Chance per round that the car retires. Endurance rounds are twice as punishing.
-function calcDNFChance(car, format = 'sprint') {
+// Chance per round that the car retires. Endurance rounds are twice as punishing,
+// and every missing driver in the lineup adds fatigue mistakes.
+function calcDNFChance(car, format = 'sprint', lineupSize = 1) {
   const reB = getREBonuses(car.id);
   const base = Math.max(0.01, 0.10 - car.upgrades.reliability * 0.01);
-  return base * (format === 'endurance' ? 2 : 1) * Math.max(0, 1 - reB.reliBonus * 2);
+  const fatigue = 1 + SHORT_LINEUP_DNF_PENALTY * getMissingDrivers(car, lineupSize);
+  return base * (format === 'endurance' ? 2 : 1) * fatigue * Math.max(0, 1 - reB.reliBonus * 2);
 }
 
 // Sponsor income is now the primary passive income source.
@@ -203,6 +233,7 @@ function buyCar(classId) {
     name: `${cls.name} #${count}`,
     upgrades: { engine: 0, aero: 0, tyres: 0, brakes: 0, reliability: 0 },
     driverId: null,
+    coDriverIds: [],
     championshipId: null,
     autoRenew: null,
   });
@@ -260,10 +291,7 @@ function sellCar(carId) {
   if (G.cars.length <= 1) return { ok: false, msg: 'You cannot sell your last car.' };
 
   const value = getCarSellValue(car);
-  if (car.driverId) {
-    const driver = G.drivers.find(d => d.id === car.driverId);
-    if (driver) driver.carId = null;
-  }
+  getCarLineup(car).forEach(d => { d.carId = null; });
   if (G.raceEngineers && G.raceEngineers[carId]) delete G.raceEngineers[carId];
   G.cars.splice(idx, 1);
   G.money += value;
@@ -438,17 +466,19 @@ function runChampionshipRound(entry) {
   const car = G.cars.find(c => c.id === entry.carId);
   const wet = Math.random() < (champDef.wetChance || 0);
   const format = champDef.format || 'sprint';
-  const driver = car && car.driverId ? G.drivers.find(d => d.id === car.driverId) : null;
+  const size = getLineupSize(champDef);
+  const lineup = car ? getCarLineup(car).slice(0, size) : [];
 
   const aiScores = entry.field.map(r => r.rating * (1 + _gauss() * RACE_NOISE));
   let pos = null, dnf = false, dns = false;
-  if (!car || !driver) {
+  if (!car || !lineup.length) {
     dns = true;
-  } else if (Math.random() < calcDNFChance(car, format)) {
+  } else if (Math.random() < calcDNFChance(car, format, size)) {
     dnf = true;
   } else {
-    const noise = RACE_NOISE * (1 - (driver.consistency || 0) / 200);
-    const score = calcCarRating(car, format, wet) * (1 + _gauss() * noise);
+    const consistency = lineup.reduce((sum, d) => sum + (d.consistency || 0), 0) / lineup.length;
+    const noise = RACE_NOISE * (1 - consistency / 200);
+    const score = calcCarRating(car, format, wet, size) * (1 + _gauss() * noise);
     pos = 1 + aiScores.filter(sc => sc > score).length;
   }
 
@@ -469,7 +499,8 @@ function runChampionshipRound(entry) {
   entry.repEarned += rep;
   entry.results.push(dns ? 'DNS' : dnf ? 'DNF' : pos);
   entry.currentRound++;
-  entry.lastRound = { pos, dnf, dns, wet, prize, rep, points, driverId: driver ? driver.id : null };
+  entry.lastRound = { pos, dnf, dns, wet, prize, rep, points, driverId: lineup[0] ? lineup[0].id : null,
+    driverIds: lineup.map(d => d.id), missing: car ? getMissingDrivers(car, size) : 0 };
   G.money += prize;
   G.totalEarned += prize;
   G.reputation += rep;
@@ -490,14 +521,22 @@ function finishChampionship(entry) {
   G.reputation += bonusRep;
   entry.repEarned += bonusRep;
 
-  const driver = car && car.driverId ? G.drivers.find(d => d.id === car.driverId) : null;
-  const lpGained = awardChampionshipLP(driver, entry.classId || (car && car.classId), finalPos, entry.carId);
+  // Every driver seated in the car earns LP; those beyond the series' lineup were reserves
+  const lineup = car ? getCarLineup(car) : [];
+  const classId = entry.classId || (car && car.classId);
+  const lpByDriver = {};
+  lineup.forEach((d, i) => {
+    lpByDriver[d.id] = awardChampionshipLP(d, classId, finalPos, entry.carId, i < getLineupSize(champDef) ? 1 : RESERVE_LP_SHARE);
+  });
+  const lpGained = lineup[0] ? lpByDriver[lineup[0].id] : {};
 
   G.completedChampionships.push({
     definitionId: entry.definitionId,
     carId: entry.carId,
     driverId: car ? car.driverId : null,
-    classId: entry.classId || (car && car.classId),
+    driverIds: lineup.map(d => d.id),
+    lpByDriver,
+    classId,
     finalPosition: finalPos,
     points: entry.points,
     results: entry.results.slice(),
@@ -510,7 +549,7 @@ function finishChampionship(entry) {
   G.champCompletions[entry.definitionId] = (G.champCompletions[entry.definitionId] || 0) + 1;
   if (car) car.championshipId = null;
   entry._completed = true;
-  return { finalPos, bonusCash, bonusRep, lpGained };
+  return { finalPos, bonusCash, bonusRep, lpGained, lineupCount: lineup.length };
 }
 
 // ─── Driver Stat Generation ───────────────────────────────────────────────────
@@ -598,14 +637,26 @@ function scoutDriver(tier) {
   return { ok: true, driver };
 }
 
-// Returns the pace-based income multiplier for a car (1.0 if no driver).
+// Pace multiplier from the lead driver (1.0 if no driver), as shown on the car card
 function calcDriverPaceMult(car) {
   const tpMot = getTPBonuses().paceMult;
   const driver = car.driverId ? G.drivers.find(d => d.id === car.driverId) : null;
   return 1 + calcDriverSkill(driver, 'sprint', false) / 100 + tpMot;
 }
 
-function assignDriver(driverId, carId) {
+// Takes a driver out of their car. If the lead leaves, the first co-driver takes over.
+function _detachDriver(driver) {
+  const car = driver.carId && G.cars.find(c => c.id === driver.carId);
+  if (car) {
+    car.coDriverIds = (car.coDriverIds || []).filter(id => id !== driver.id);
+    if (car.driverId === driver.id) car.driverId = car.coDriverIds.shift() || null;
+  }
+  driver.carId = null;
+}
+
+// Seats a driver in a car. slot 'lead' takes the lead seat (the previous lead becomes
+// a co-driver if a seat is free); slot 'co' joins as a co-driver, or as lead if the car is empty.
+function assignDriver(driverId, carId, slot = 'lead') {
   const driver = G.drivers.find(d => d.id === driverId);
   const car = G.cars.find(c => c.id === carId);
   if (!driver || !car) return { ok: false, msg: 'Driver or car not found.' };
@@ -617,31 +668,32 @@ function assignDriver(driverId, carId) {
     const needed     = licenseDef ? licenseDef.pointsRequired - currentLP : '?';
     return { ok: false, msg: `${driver.name} doesn't hold a ${requiredLicenseId} license yet — ${needed} more LP needed.` };
   }
+  if (!car.coDriverIds) car.coDriverIds = [];
+  const others = getCarLineup(car).filter(d => d.id !== driverId).length;
+  if (slot === 'co' && others >= MAX_LINEUP)
+    return { ok: false, msg: `${car.name} already has ${MAX_LINEUP} drivers.` };
 
-  // Unassign from previous car
-  if (driver.carId) {
-    const prevCar = G.cars.find(c => c.id === driver.carId);
-    if (prevCar) prevCar.driverId = null;
+  _detachDriver(driver);
+  if (!car.driverId) {
+    car.driverId = driverId;
+  } else if (slot === 'lead') {
+    const prevLead = G.drivers.find(d => d.id === car.driverId);
+    car.driverId = driverId;
+    if (prevLead) {
+      if (getCarLineup(car).length < MAX_LINEUP) car.coDriverIds.unshift(prevLead.id);
+      else prevLead.carId = null;
+    }
+  } else {
+    car.coDriverIds.push(driverId);
   }
-  // Unassign previous driver from target car
-  if (car.driverId) {
-    const prevDriver = G.drivers.find(d => d.id === car.driverId);
-    if (prevDriver) prevDriver.carId = null;
-  }
-
   driver.carId = carId;
-  car.driverId = driverId;
   return { ok: true };
 }
 
 function unassignDriver(driverId) {
   const driver = G.drivers.find(d => d.id === driverId);
   if (!driver) return { ok: false, msg: 'Driver not found.' };
-  if (driver.carId) {
-    const car = G.cars.find(c => c.id === driver.carId);
-    if (car) car.driverId = null;
-  }
-  driver.carId = null;
+  _detachDriver(driver);
   return { ok: true };
 }
 
@@ -649,10 +701,7 @@ function fireDriver(driverId) {
   const idx = G.drivers.findIndex(d => d.id === driverId);
   if (idx === -1) return { ok: false, msg: 'Driver not found.' };
   const driver = G.drivers[idx];
-  if (driver.carId) {
-    const car = G.cars.find(c => c.id === driver.carId);
-    if (car) car.driverId = null;
-  }
+  _detachDriver(driver);
   const name = driver.name;
   G.drivers.splice(idx, 1);
   return { ok: true, name };
@@ -1157,23 +1206,24 @@ function _migrateStaff() {
 
 // ─── End Season ───────────────────────────────────────────────────────────────
 
-// Driver and class for a completed championship. Records from before driverId was
-// stored fall back to the car's current driver.
+// Drivers and class for a completed championship. Records from before lineups list
+// only the lead driver; older ones fall back to the car's current driver.
 function _champDriverAndClass(comp) {
   const car = G.cars.find(c => c.id === comp.carId);
+  if (comp.driverIds) return { driverIds: comp.driverIds, classId: comp.classId };
   if (comp.driverId !== undefined) {
-    return { driverId: comp.driverId, classId: comp.classId || (car && car.classId) };
+    return { driverIds: comp.driverId ? [comp.driverId] : [], classId: comp.classId || (car && car.classId) };
   }
-  return { driverId: car ? car.driverId : null, classId: car ? car.classId : null };
+  return { driverIds: car && car.driverId ? [car.driverId] : [], classId: car ? car.classId : null };
 }
 
 // Award License Points to a driver for one completed championship.
 // Returns { licenseId: pointsEarned } for licenses not yet held.
-function awardChampionshipLP(driver, classId, finalPos, carId) {
+function awardChampionshipLP(driver, classId, finalPos, carId, share = 1) {
   if (!driver) return {};
   const lpTable = LP_EARN_TABLE[classId] || {};
   const factor  = LICENSE_RESULT_FACTORS[Math.min(finalPos, LICENSE_RESULT_FACTORS.length) - 1];
-  const mult    = (G.licensePtMultiplier || 1.0) * (1 + getREBonuses(carId).coachBonus) * factor;
+  const mult    = (G.licensePtMultiplier || 1.0) * (1 + getREBonuses(carId).coachBonus) * factor * share;
   if (!driver.licensePoints) driver.licensePoints = {};
   if (!driver.licenses) driver.licenses = ['GT4'];
 
@@ -1197,9 +1247,12 @@ function awardChampionshipLP(driver, classId, finalPos, carId) {
 // LP earned this season per driver, summed from completed championships
 function _seasonLPByDriver(season) {
   const byDriver = {};
-  G.completedChampionships.filter(c => c.season === season && c.driverId && c.lpGained).forEach(c => {
-    const acc = byDriver[c.driverId] = byDriver[c.driverId] || {};
-    Object.entries(c.lpGained).forEach(([id, pts]) => { acc[id] = (acc[id] || 0) + pts; });
+  G.completedChampionships.filter(c => c.season === season).forEach(c => {
+    const perDriver = c.lpByDriver || (c.driverId && c.lpGained ? { [c.driverId]: c.lpGained } : {});
+    Object.entries(perDriver).forEach(([driverId, earned]) => {
+      const acc = byDriver[driverId] = byDriver[driverId] || {};
+      Object.entries(earned).forEach(([id, pts]) => { acc[id] = (acc[id] || 0) + pts; });
+    });
   });
   return byDriver;
 }
@@ -1256,11 +1309,7 @@ function endSeason() {
     const d = G.drivers.find(x => x.id === driverId);
     if (!d) return;
     addNotification(`${d.name} has retired aged ${d.age}.`, 'info');
-    if (d.carId) {
-      const car = G.cars.find(c => c.id === d.carId);
-      if (car) car.driverId = null;
-      d.carId = null;
-    }
+    _detachDriver(d);
     G.drivers.splice(G.drivers.findIndex(x => x.id === driverId), 1);
   });
 
@@ -1268,9 +1317,10 @@ function endSeason() {
   G.completedChampionships
     .filter(c => c.season === G.season)
     .forEach(comp => {
-      const { driverId } = _champDriverAndClass(comp);
-      const driver = driverId && G.drivers.find(d => d.id === driverId);
-      if (driver) driver.xp += 100;
+      _champDriverAndClass(comp).driverIds.forEach(driverId => {
+        const driver = G.drivers.find(d => d.id === driverId);
+        if (driver) driver.xp += 100;
+      });
     });
 
   // 6. Abandon all in-progress championships
@@ -1282,8 +1332,7 @@ function endSeason() {
 
   // 7. Legend contracts end with the season
   G.drivers.filter(d => d.contractUntilSeason !== undefined && d.contractUntilSeason <= endedSeason).forEach(d => {
-    const car = G.cars.find(c => c.id === d.carId);
-    if (car) car.driverId = null;
+    _detachDriver(d);
     G.drivers.splice(G.drivers.indexOf(d), 1);
     addNotification(`${d.name}'s legend contract has ended.`, 'info');
   });
@@ -1380,7 +1429,7 @@ function doPrestige() {
   });
   G.cars = keptCars;
   if (!G.cars.some(c => c.classId === 'GT4')) {
-    G.cars.push({ id: 'car_' + G.nextCarId++, classId: 'GT4', name: 'GT4 #1', upgrades: {}, driverId: null, championshipId: null, autoRenew: null });
+    G.cars.push({ id: 'car_' + G.nextCarId++, classId: 'GT4', name: 'GT4 #1', upgrades: {}, driverId: null, coDriverIds: [], championshipId: null, autoRenew: null });
   }
 
   // Upgrades reset to the head-start level (2 reliability levels are kept)
@@ -1397,7 +1446,11 @@ function doPrestige() {
 
   // Drivers keep their seats only in surviving cars
   G.drivers.forEach(d => { if (d.carId && !G.cars.some(c => c.id === d.carId)) d.carId = null; });
-  G.cars.forEach(c => { if (c.driverId && !G.drivers.some(d => d.id === c.driverId)) c.driverId = null; });
+  G.cars.forEach(c => {
+    if (c.driverId && !G.drivers.some(d => d.id === c.driverId)) c.driverId = null;
+    c.coDriverIds = (c.coDriverIds || []).filter(id => G.drivers.some(d => d.id === id));
+    if (!c.driverId) c.driverId = c.coDriverIds.shift() || null;
+  });
   const gt4 = G.cars.find(c => c.classId === 'GT4' && !c.driverId);
   if (gt4) {
     const free = G.drivers.filter(d => !d.carId).sort((a, b) => calcDriverSkill(b, 'sprint') - calcDriverSkill(a, 'sprint'))[0];
@@ -1465,7 +1518,8 @@ function advanceWorld(now) {
         const fin = finishChampionship(entry);
         entry._finishedAt = entry.roundStartTime;
         const title = fin.finalPos === 1 ? '🏆 CHAMPIONS!' : `finished P${fin.finalPos} overall`;
-        const lpText = Object.entries(fin.lpGained || {}).map(([id, p]) => `+${p} ${id} LP`).join(', ');
+        const lpText = Object.entries(fin.lpGained || {}).map(([id, p]) => `+${p} ${id} LP`).join(', ')
+          + (fin.lineupCount > 1 ? ' (lead driver)' : '');
         _notify(`${champDef.name}: ${title}${fin.bonusCash ? ` +$${formatNumber(fin.bonusCash)} standings bonus` : ''}${lpText ? ' · ' + lpText : ''}`, fin.finalPos <= 3 ? 'success' : 'info');
       }
     }
@@ -1561,6 +1615,7 @@ function loadGame() {
     _migrateRaceEntries();
     _migrateSeasonClock();
     if (!G.hq) G.hq = { simulator: 0, composites: 0, hospitality: 0 };
+    G.cars.forEach(c => { if (!c.coDriverIds) c.coDriverIds = []; }); // saves before driver lineups
     return true;
   } catch (e) {
     console.warn('Load failed:', e);

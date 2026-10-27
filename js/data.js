@@ -332,6 +332,7 @@ const CHAMPIONSHIPS = [
     prerequisiteChampionship: 'gt_world_challenge',
     repPerRound: 70,
     format: 'endurance',
+    lineupSize: 2,
     fieldStrength: { GT3: 185, LMP2: 300, HYPERCAR: 345 },
     prizeMult: 10,
     wetChance: 0.15,
@@ -350,6 +351,7 @@ const CHAMPIONSHIPS = [
     prerequisiteChampionship: 'gt_world_challenge',
     repPerRound: 80,
     format: 'endurance',
+    lineupSize: 3,
     fieldStrength: { GT3: 195, LMP3: 225, LMP2: 295 },
     prizeMult: 15,
     wetChance: 0.25,
@@ -368,6 +370,7 @@ const CHAMPIONSHIPS = [
     prerequisiteChampionship: ['imsa_weathertech', 'elms'], // either one
     repPerRound: 120,
     format: 'endurance',
+    lineupSize: 3,
     fieldStrength: { GT3: 210, LMP2: 310, HYPERCAR: 360 },
     prizeMult: 20,
     wetChance: 0.2,
@@ -470,6 +473,14 @@ const SEASON_LENGTH_SEC = 3600;
 const FIELD_SIZE = 12;          // AI rivals per class in a championship
 const FIELD_SPREAD = 0.36;      // AI ratings span fieldStrength × (1 ± spread/2)
 const RACE_NOISE = 0.07;        // per-round performance variance (std dev, before consistency)
+
+// Driver lineups: a car seats a lead driver plus co-drivers. Endurance series set a
+// lineupSize; a short lineup makes its fittest driver double-stint while fatigued.
+const MAX_LINEUP = 3;
+const FATIGUE_SKILL_BASE = 0.55;        // double-stint skill share, + fitness / FATIGUE_FITNESS_DIV
+const FATIGUE_FITNESS_DIV = 500;        // fitness 50 → 65% of normal skill
+const SHORT_LINEUP_DNF_PENALTY = 0.5;   // +50% DNF chance per missing driver
+const RESERVE_LP_SHARE = 0.5;           // drivers beyond the series' lineup earn half LP
 
 const RIVAL_TEAMS = [
   'Apex Dynamics', 'Redline Works', 'Nova Motorsport', 'Iron Falcon', 'Stratos Racing',
