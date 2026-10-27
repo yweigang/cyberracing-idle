@@ -563,8 +563,8 @@ function getSponsorSlotsUnlocked() {
   let slots = 1;
   if (hasCompletedChampionship('gt4_regional')) slots = Math.max(slots, 2);
   if (G.reputation >= 3500)  slots = Math.max(slots, 3);
-  if (G.reputation >= 20000) slots = Math.max(slots, 4);
-  if (G.reputation >= 80000) slots = Math.max(slots, 5);
+  if (G.reputation >= 15000) slots = Math.max(slots, 4);
+  if (G.reputation >= 40000) slots = Math.max(slots, 5);
   return slots;
 }
 
