@@ -195,11 +195,12 @@ const CLASS_LICENSE_REQUIREMENT = {
 const LP_EARN_TABLE = {
   KARTING: { F4: 10, GT4: 5,  GT3: 2,  LMP3: 1,  LMP2: 1,  HYPERCAR: 1,  F1: 1  },
   F4:      {         GT4: 15, GT3: 8,  LMP3: 3,  LMP2: 2,  HYPERCAR: 1,  F1: 1  },
-  GT4:     {                  GT3: 25, LMP3: 10, LMP2: 6,  HYPERCAR: 4,  F1: 2  },
-  GT3:     {                           LMP3: 25, LMP2: 14, HYPERCAR: 9,  F1: 5  },
-  LMP3:    {                                     LMP2: 30, HYPERCAR: 20, F1: 12 },
-  LMP2:    {                                               HYPERCAR: 30, F1: 20 },
-  HYPERCAR:{                                                              F1: 30 },
+  // GT and prototype racing also counts toward the F4 license, so any driver can cross over
+  GT4:     { F4: 10,          GT3: 25, LMP3: 10, LMP2: 6,  HYPERCAR: 4,  F1: 2  },
+  GT3:     { F4: 12,                   LMP3: 25, LMP2: 14, HYPERCAR: 9,  F1: 5  },
+  LMP3:    { F4: 15,                             LMP2: 30, HYPERCAR: 20, F1: 12 },
+  LMP2:    { F4: 20,                                       HYPERCAR: 30, F1: 20 },
+  HYPERCAR:{ F4: 30,                                                      F1: 30 },
   // F3/F2 not in original spec — values are estimates, adjust as needed
   F3:      {                           LMP3: 20, LMP2: 10, HYPERCAR: 6,  F1: 15 },
   F2:      {                                     LMP2: 25, HYPERCAR: 15, F1: 25 },
@@ -211,7 +212,7 @@ const LICENSE_RESULT_FACTORS = [1, 0.75, 0.6, 0.4, 0.4, 0.2, 0.2, 0.2, 0.2, 0.2,
 // Licenses a freshly scouted driver already holds, by driver tier
 const TIER_STARTING_LICENSES = {
   C: ['GT4'],
-  B: ['GT4', 'GT3'],
+  B: ['GT4', 'GT3', 'F4'],
   A: ['GT4', 'GT3', 'LMP3', 'F4'],
   S: ['GT4', 'GT3', 'LMP3', 'LMP2', 'F4'],
   L: ['GT4', 'GT3', 'LMP3', 'LMP2', 'HYPERCAR', 'F4'],
@@ -338,7 +339,7 @@ const CHAMPIONSHIPS = [
     rounds: 6,
     roundDurationSec: 150,
     entryFee: 500000,
-    repRequired: 5000,
+    repRequired: 2500,      // the LMP3's series: opens when the LMP3 can be bought
     prerequisiteChampionship: 'gt_world_challenge',
     repPerRound: 80,
     format: 'endurance',
@@ -455,8 +456,13 @@ const POINTS_TABLE = [25, 18, 15, 12, 10, 8, 6, 4, 2, 1];
 // Share of the P1 round prize/REP paid per finishing position (last value repeats)
 const PRIZE_FACTORS = [1, 0.8, 0.66, 0.55, 0.46, 0.39, 0.33, 0.28, 0.24, 0.2, 0.15, 0.1];
 
-// End-of-championship bonus by final standing, as a share of (P1 round prize × rounds)
-const STANDING_BONUS = [0.5, 0.3, 0.2, 0.1, 0.05];
+// Championship prize pool paid on the final standings, as a share of (P1 round prize × rounds)
+const STANDING_BONUS = [0.6, 0.45, 0.35, 0.27, 0.2, 0.15, 0.11, 0.08, 0.05, 0.03];
+// REP bonus on the final standings, same base (P1 round REP × rounds)
+const STANDING_REP_BONUS = [0.5, 0.3, 0.2, 0.1, 0.05];
+
+// A car that has raced a series before keeps its slot: later entries cost this share of the fee
+const RENEWAL_FEE_SHARE = 0.25;
 
 // Every season lasts this long in real time and ends automatically
 const SEASON_LENGTH_SEC = 3600;
@@ -486,21 +492,26 @@ const RIVAL_TEAMS = [
 
 // ─── Drivers ──────────────────────────────────────────────────────────────────
 
+// salary: paid at every season end while the driver is signed (Legends are prepaid)
 const DRIVER_TIERS = {
-  C: { name: 'Club Racer',     rarity: 'Common',    scoutCost: 0,       color: '#888',    locked: false },
-  B: { name: 'Gentleman',      rarity: 'Uncommon',  scoutCost: 10000,   color: '#44aa44', locked: false },
-  A: { name: 'Pro Driver',     rarity: 'Rare',      scoutCost: 75000,   color: '#4488ff', locked: false },
-  S: { name: 'Factory Driver', rarity: 'Epic',      scoutCost: 500000,  color: '#aa44ff', locked: false },
-  L: { name: 'Legend',         rarity: 'Legendary', scoutCost: 0,       color: '#ffaa00', locked: true  },
+  C: { name: 'Club Racer',     rarity: 'Common',    scoutCost: 0,       salary: 0,      color: '#888',    locked: false },
+  B: { name: 'Gentleman',      rarity: 'Uncommon',  scoutCost: 10000,   salary: 2000,   color: '#44aa44', locked: false },
+  A: { name: 'Pro Driver',     rarity: 'Rare',      scoutCost: 75000,   salary: 15000,  color: '#4488ff', locked: false },
+  S: { name: 'Factory Driver', rarity: 'Epic',      scoutCost: 500000,  salary: 100000, color: '#aa44ff', locked: false },
+  L: { name: 'Legend',         rarity: 'Legendary', scoutCost: 0,       salary: 0,      color: '#ffaa00', locked: true  },
 };
 
-// Budget, floor, and ceiling per driver tier
+// The free Club Racer scout can only be used this often, so it can't be rerolled endlessly
+const FREE_SCOUT_COOLDOWN_SEC = 90;
+
+// Budget, floor, and ceiling per driver tier. paceMin guarantees a paid driver is
+// actually quick, whichever stat their budget favours.
 const DRIVER_STAT_CONFIG = {
-  C: { budgetMin: 50,  budgetMax: 70,  floor: 5,  ceiling: 25  },
-  B: { budgetMin: 80,  budgetMax: 110, floor: 8,  ceiling: 38  },
-  A: { budgetMin: 130, budgetMax: 160, floor: 15, ceiling: 60  },
-  S: { budgetMin: 180, budgetMax: 220, floor: 25, ceiling: 80  },
-  L: { budgetMin: 260, budgetMax: 300, floor: 40, ceiling: 100 },
+  C: { budgetMin: 50,  budgetMax: 70,  floor: 5,  ceiling: 25,  paceMin: 8  },
+  B: { budgetMin: 80,  budgetMax: 110, floor: 8,  ceiling: 38,  paceMin: 18 },
+  A: { budgetMin: 130, budgetMax: 160, floor: 15, ceiling: 60,  paceMin: 32 },
+  S: { budgetMin: 180, budgetMax: 220, floor: 25, ceiling: 80,  paceMin: 48 },
+  L: { budgetMin: 260, budgetMax: 300, floor: 40, ceiling: 100, paceMin: 65 },
 };
 
 const DRIVER_STAT_KEYS = ['pace', 'consistency', 'tyreManagement', 'rainSkill', 'fitness'];
@@ -566,6 +577,13 @@ const DRIVER_LAST_NAMES = [
 
 const PRESTIGE_ITEMS = [
   {
+    id: 'seed_money',
+    name: 'Investor Backing',
+    cost: 10,
+    description: '+$25,000 starting money after every reset (per purchase).',
+    maxPurchases: 5,
+  },
+  {
     id: 'head_start',
     name: 'Season Head-Start',
     cost: 50,
@@ -616,6 +634,8 @@ const PRESTIGE_TITLE_PP = {
 const PRESTIGE_PODIUM_SHARE = 0.4;
 const PRESTIGE_REP_PER_PP = 1000;   // REP gained since the last reset per PP
 const PRESTIGE_MIN_GAIN = 20;       // smallest PP gain that allows a reset
+const PRESTIGE_START_MONEY = 5000;  // money after a reset, before Investor Backing
+const SEED_MONEY_PER_PURCHASE = 25000;
 
 // ─── Team HQ (late-game money sink) ───────────────────────────────────────────
 
@@ -782,6 +802,7 @@ const TOP_CHAMPIONSHIPS   = ['fia_wec', 'f1_world_championship'];
 // Share of a targeted sponsor's income paid as it accrues; the rest is held
 // back and only paid at season end if the target is met
 const SPONSOR_UPFRONT_SHARE = 0.75;
+const FAMILY_SUPPORT_IPS = 8;     // Mum & Dad Racing Support, $/s before bonuses
 
 // Sponsor offers available per season (fixed until the season ends)
 const SPONSOR_OFFERS_PER_SEASON = 4;
@@ -884,7 +905,7 @@ const RE_STAT_LABELS = {
 const RE_STAT_DESCS = {
   setupMastery:           'Raises the race rating of this car',
   reliabilityEngineering: 'Boosts reliability multiplier on this car',
-  pitWallStrategy:        'Increases championship income bonus for this car',
+  pitWallStrategy:        'Smarter strategy calls: up to +5% prize money from every race',
   driverCoach:            'Increases assigned driver XP and License Point gain',
   dataAnalysis:           'Boosts championship final payout bonus',
 };

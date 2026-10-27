@@ -222,9 +222,22 @@ function _upfrontShare(sponsor) {
   return sponsor.target ? SPONSOR_UPFRONT_SHARE : 1;
 }
 
+// A sponsor's income per second after bonuses, split into what is paid now and
+// what is held back until its target is met at season end
+function getSponsorPayRates(sponsor) {
+  const mult = _sponsorMult();
+  const now = sponsor.incomePerSec * _upfrontShare(sponsor) * mult;
+  return { now, held: sponsor.incomePerSec * mult - now };
+}
+
+// Family support after bonuses
+function getFamilySupportPerSec() {
+  return FAMILY_SUPPORT_IPS * _sponsorMult();
+}
+
 // Sponsor income paid out right now, per second
 function calcSponsorIncomePerSec() {
-  const parentsIncome = 8; // Mum & Dad Racing Support — always active
+  const parentsIncome = FAMILY_SUPPORT_IPS; // Mum & Dad Racing Support — always active
   const sponsors = Array.isArray(G.sponsors) ? G.sponsors : [];
   const paid = sponsors.reduce((sum, s) => sum + (s ? s.incomePerSec * _upfrontShare(s) : 0), 0);
   return (parentsIncome + paid) * _sponsorMult();
@@ -464,6 +477,15 @@ function getChampionshipDuration(champDef) {
   return champDef.rounds * champDef.roundDurationSec;
 }
 
+// Entry fee for a car: full for a new slot, RENEWAL_FEE_SHARE once the car has raced the series
+function hasSeriesSlot(car, champDef) {
+  return !!(car && champDef && (car.seriesSlots || []).includes(champDef.id));
+}
+
+function getEntryFee(champDef, car) {
+  return hasSeriesSlot(car, champDef) ? Math.round(champDef.entryFee * RENEWAL_FEE_SHARE) : champDef.entryFee;
+}
+
 function fitsInSeason(champDef, at = Date.now()) {
   return getChampionshipDuration(champDef) <= getSeasonTimeLeft(at);
 }
@@ -483,16 +505,18 @@ function _entryProblem(champDef, car) {
   return null;
 }
 
-function enterChampionship(definitionId, carId, at = Date.now(), prepaid = false) {
+// prepaidFee: the fee already paid through a next-season registration, if any
+function enterChampionship(definitionId, carId, at = Date.now(), prepaidFee = null) {
   const champDef = getChampionshipById(definitionId);
   const car = G.cars.find(c => c.id === carId);
   const problem = _entryProblem(champDef, car);
   if (problem) return { ok: false, msg: problem };
   if (car.championshipId !== null) return { ok: false, msg: 'Car already in a championship.' };
   if (!fitsInSeason(champDef, at)) return { ok: false, msg: 'Not enough time left this season.' };
-  if (!prepaid && G.money < champDef.entryFee) return { ok: false, msg: 'Not enough money for entry fee.' };
+  const fee = prepaidFee !== null ? prepaidFee : getEntryFee(champDef, car);
+  if (prepaidFee === null && G.money < fee) return { ok: false, msg: 'Not enough money for entry fee.' };
 
-  if (!prepaid) G.money -= champDef.entryFee;
+  if (prepaidFee === null) G.money -= fee;
 
   const entry = {
     id: _newEntryId('champ_entry_'),
@@ -510,6 +534,7 @@ function enterChampionship(definitionId, carId, at = Date.now(), prepaid = false
     lastRound: null,
     field: generateField(champDef, car.classId),
     startedAt: at,
+    feePaid: fee,
   };
 
   G.activeChampionships.push(entry);
@@ -552,9 +577,10 @@ function registerForNextSeason(definitionId, carId) {
   const problem = _entryProblem(champDef, car);
   if (problem) return { ok: false, msg: problem };
   if (getRegistration(carId)) return { ok: false, msg: `${car.name} is already registered for next season.` };
-  if (G.money < champDef.entryFee) return { ok: false, msg: 'Not enough money for entry fee.' };
-  G.money -= champDef.entryFee;
-  G.registrations.push({ id: _newEntryId('reg_'), definitionId, carId, fee: champDef.entryFee });
+  const fee = getEntryFee(champDef, car);
+  if (G.money < fee) return { ok: false, msg: 'Not enough money for entry fee.' };
+  G.money -= fee;
+  G.registrations.push({ id: _newEntryId('reg_'), definitionId, carId, fee });
   return { ok: true };
 }
 
@@ -573,7 +599,7 @@ function _activateRegistrations(at) {
   regs.forEach(reg => {
     const champDef = getChampionshipById(reg.definitionId);
     const car = G.cars.find(c => c.id === reg.carId);
-    const res = enterChampionship(reg.definitionId, reg.carId, at, true);
+    const res = enterChampionship(reg.definitionId, reg.carId, at, reg.fee);
     if (res.ok) {
       _notify(`${car.name} starts ${champDef.name}.`, 'info');
     } else {
@@ -618,6 +644,13 @@ function getFieldStrength(champDef, classId) {
 function getRoundPrize(champDef, classId) {
   const cls = getCarClassById(classId);
   return cls ? cls.baseIncomePerLap * champDef.prizeMult : 0;
+}
+
+// P1 round REP for a class. Faster classes face stronger fields, so they earn more:
+// the square root of their field strength over the series' slowest class.
+function getRoundRep(champDef, classId) {
+  const slowest = Math.min(...champDef.allowedClasses.map(id => getFieldStrength(champDef, id)));
+  return champDef.repPerRound * Math.sqrt(getFieldStrength(champDef, classId || champDef.allowedClasses[0]) / slowest);
 }
 
 function generateField(champDef, classId) {
@@ -677,7 +710,7 @@ function runChampionshipRound(entry) {
   if (pos !== null) {
     points = getRoundPoints(pos);
     prize = Math.round(getRoundPrize(champDef, entry.classId) * getPrizeFactor(pos) * (1 + getREBonuses(car.id).pitBonus));
-    rep = Math.round(champDef.repPerRound * getPrizeFactor(pos)) + getTPBonuses().strategyRep;
+    rep = Math.round(getRoundRep(champDef, entry.classId) * getPrizeFactor(pos)) + getTPBonuses().strategyRep;
   }
   entry.points += points;
   entry.prizeEarned += prize;
@@ -700,7 +733,7 @@ function finishChampionship(entry) {
   const share = STANDING_BONUS[finalPos - 1] || 0;
   const dataBonus = getREBonuses(entry.carId).dataBonus;
   const bonusCash = Math.round(getRoundPrize(champDef, entry.classId) * entry.maxRounds * share * (1 + dataBonus));
-  const bonusRep  = Math.round(champDef.repPerRound * entry.maxRounds * share);
+  const bonusRep  = Math.round(getRoundRep(champDef, entry.classId) * entry.maxRounds * (STANDING_REP_BONUS[finalPos - 1] || 0));
   G.money += bonusCash;
   G.totalEarned += bonusCash;
   G.reputation += bonusRep;
@@ -733,6 +766,7 @@ function finishChampionship(entry) {
   if (car) {
     car.championshipId = null;
     car.setupChamps = (car.setupChamps || 0) + 1;
+    if (!hasSeriesSlot(car, champDef)) car.seriesSlots = [...(car.seriesSlots || []), champDef.id];
   }
   entry._completed = true;
   return { finalPos, bonusCash, bonusRep, lpGained, lineupCount: lineup.length };
@@ -777,6 +811,8 @@ function generateDriverStats(tier, randFn) {
   const rainMod = 1 + (randFn() * 0.8 - 0.4);
   stats.rainSkill = Math.min(cfg.ceiling, Math.max(cfg.floor, Math.round(stats.rainSkill * rainMod)));
 
+  if (cfg.paceMin) stats.pace = Math.max(stats.pace, cfg.paceMin);
+
   return { stats, primaryStat: primaryKey };
 }
 
@@ -809,6 +845,16 @@ function _uniqueName(firstNames, lastNames, extraTaken = []) {
 
 let _allowLockedScout = false;
 
+// Seconds until the free Club Racer scout is available again
+function getFreeScoutWait(at = Date.now()) {
+  return Math.max(0, ((G.nextFreeScoutAt || 0) - at) / 1000);
+}
+
+function getDriverSalary(driver) {
+  const tierDef = DRIVER_TIERS[driver.tier];
+  return tierDef ? tierDef.salary || 0 : 0;
+}
+
 function scoutDriver(tier) {
   const tierDef = DRIVER_TIERS[tier];
   if (!tierDef) return { ok: false, msg: 'Unknown tier.' };
@@ -816,8 +862,11 @@ function scoutDriver(tier) {
   const discount = G.prestige.permanentBonuses.scoutDiscount || 0;
   const effectiveScoutCost = Math.floor(tierDef.scoutCost * getTPBonuses().scoutCostMult * (1 - discount));
   if (G.money < effectiveScoutCost) return { ok: false, msg: 'Not enough money.' };
+  const freeScout = tier === 'C';
+  if (freeScout && getFreeScoutWait() > 0) return { ok: false, msg: `Next free scout in ${Math.ceil(getFreeScoutWait())}s.` };
 
   G.money -= effectiveScoutCost;
+  if (freeScout) G.nextFreeScoutAt = Date.now() + FREE_SCOUT_COOLDOWN_SEC * 1000;
 
   const { stats, primaryStat } = generateDriverStats(tier, Math.random);
   const name = _uniqueName(DRIVER_FIRST_NAMES, DRIVER_LAST_NAMES);
@@ -1087,6 +1136,15 @@ function signSponsor(slotIndex, sponsorData) {
   return { ok: true };
 }
 
+// Ends a sponsor's contract and signs one of this season's offers into its slot
+function replaceSponsor(sponsorId, offerId) {
+  const idx = G.sponsors.findIndex(s => s && s.id === sponsorId);
+  if (idx === -1) return { ok: false, msg: 'Sponsor not found.' };
+  if (!getSponsorOffers().some(o => o.id === offerId)) return { ok: false, msg: 'Offer no longer available.' };
+  terminateSponsor(sponsorId);
+  return signSponsorOffer(idx, offerId);
+}
+
 function terminateSponsor(sponsorId) {
   const idx = G.sponsors.findIndex(s => s && s.id === sponsorId);
   if (idx === -1) return { ok: false, msg: 'Sponsor not found.' };
@@ -1325,13 +1383,45 @@ function _applyDriverTraining(driver) {
   }
 }
 
+// Everyone paid at season end: the Team Principal, race engineers and drivers
+function getPayroll() {
+  const rows = [];
+  if (G.teamPrincipal) rows.push({ kind: 'tp', person: G.teamPrincipal, salary: G.teamPrincipal.salary || 0 });
+  Object.entries(G.raceEngineers || {}).forEach(([carId, re]) => rows.push({ kind: 're', carId, person: re, salary: re.salary || 0 }));
+  G.drivers.forEach(d => rows.push({ kind: 'driver', person: d, salary: getDriverSalary(d) }));
+  return rows.filter(r => r.salary > 0);
+}
+
+// The season right after a prestige reset is salary-free
+function isSalaryFreeSeason() {
+  return G.salaryFreeSeason === G.season;
+}
+
+// Salaries due at the end of this season
+function getSeasonSalaryTotal() {
+  return isSalaryFreeSeason() ? 0 : getPayroll().reduce((sum, r) => sum + r.salary, 0);
+}
+
+// Pays the season's salaries. When the money doesn't cover them, the best-paid people
+// leave unpaid until it does, so money never goes negative.
 function deductSeasonSalaries() {
-  let total = 0;
-  if (G.teamPrincipal) total += G.teamPrincipal.salary;
-  if (G.raceEngineers) Object.values(G.raceEngineers).forEach(re => { total += re.salary; });
+  if (isSalaryFreeSeason()) {
+    addNotification(`No salaries for season ${G.season}: the team was rebuilding after its reset.`, 'info');
+    return;
+  }
+  const rows = getPayroll().sort((a, b) => b.salary - a.salary);
+  let total = rows.reduce((sum, r) => sum + r.salary, 0);
+  while (rows.length && total > Math.max(0, G.money)) {
+    const r = rows.shift();
+    total -= r.salary;
+    if (r.kind === 'tp') G.teamPrincipal = null;
+    else if (r.kind === 're') delete G.raceEngineers[r.carId];
+    else { _detachDriver(r.person); G.drivers.splice(G.drivers.indexOf(r.person), 1); }
+    addNotification(`${r.person.name} left: the team couldn't pay their $${formatNumber(r.salary)} salary.`, 'error');
+  }
   if (total > 0) {
     G.money -= total;
-    addNotification(`Season ${G.season} staff salaries: -$${formatNumber(total)}`, 'info');
+    addNotification(`Season ${G.season} salaries: -$${formatNumber(total)}`, 'info');
   }
 }
 
@@ -1497,7 +1587,15 @@ function endSeason(endedAt = getSeasonEndTime()) {
   // 1. Evaluate all active sponsor contracts
   evaluateSponsorsAtSeasonEnd();
 
-  // 2. Deduct staff salaries
+  // 2. Championships still running are abandoned below; refund their entry fees,
+  // then pay salaries
+  G.activeChampionships.forEach(entry => {
+    const def = getChampionshipById(entry.definitionId);
+    if (!def) return;
+    const paid = entry.feePaid !== undefined ? entry.feePaid : def.entryFee;
+    G.money += paid;
+    addNotification(`${def.name} couldn't finish before the season ended: $${formatNumber(paid)} entry fee refunded.`, 'info');
+  });
   deductSeasonSalaries();
 
   // 3. LP was awarded per championship; collect it for the summary
@@ -1595,6 +1693,17 @@ function calcPrestigePoints() {
   return Math.floor(pp + repGained / PRESTIGE_REP_PER_PP) + getHQPrestigePoints();
 }
 
+// Money the team restarts with after a prestige reset
+function getPrestigeStartMoney() {
+  return PRESTIGE_START_MONEY + getPrestigeItemCount('seed_money') * SEED_MONEY_PER_PURCHASE;
+}
+
+// Cheapest shop item still available to buy, or null
+function getCheapestPrestigeItem() {
+  return PRESTIGE_ITEMS.filter(i => !i.maxPurchases || getPrestigeItemCount(i.id) < i.maxPurchases)
+    .sort((a, b) => a.cost - b.cost)[0] || null;
+}
+
 function canPrestige() {
   return calcPrestigePoints() >= PRESTIGE_MIN_GAIN;
 }
@@ -1642,9 +1751,10 @@ function doPrestige() {
   G.prestige.totalResets++;
   const singleSeaterJustUnlocked = prevPrestigeCount === 0;
 
-  // Reset money and end all championships
-  G.money = 5000;
+  // Reset money and end all championships. No salaries are due this season.
+  G.money = getPrestigeStartMoney();
   G.activeChampionships = [];
+  G.salaryFreeSeason = G.season;
 
   // Cars: development tokens keep the highest-class cars, the rest are scrapped.
   // There is always at least one GT4 to restart with.
@@ -1669,6 +1779,7 @@ function doPrestige() {
   G.cars.forEach(car => {
     car.upgrades = { reliability: Math.min(car.upgrades.reliability || 0, 2) };
     car.setupChamps = 0;
+    car.seriesSlots = [];
     car.championshipId = null;
     car.autoRenew = null;
   });
@@ -1696,7 +1807,7 @@ function doPrestige() {
   // HQ facilities are rebuilt each run (their levels were paid out as PP)
   G.hq = { simulator: 0, composites: 0, hospitality: 0 };
 
-  addNotification(`Prestige! +${ppGain} PP. The team starts over with ${G.cars.length} car${G.cars.length > 1 ? 's' : ''} and $5,000.`, 'prestige');
+  addNotification(`Prestige! +${ppGain} PP. The team starts over with ${G.cars.length} car${G.cars.length > 1 ? 's' : ''} and $${formatNumber(G.money)}. No salaries are due this season.`, 'prestige');
   if (singleSeaterJustUnlocked) {
     addNotification('🏎️ Single-Seater Pathway Unlocked! F4 is now available.', 'prestige');
   }
@@ -1860,6 +1971,7 @@ function loadGame() {
     _migrateBoP();
     _migrateDuplicateNames();
     _migrateEntryIds();
+    _migrateFeedbackRound();
     return true;
   } catch (e) {
     console.warn('Load failed:', e);
@@ -1936,6 +2048,20 @@ function _migrateEntryIds() {
 }
 
 // Saves from before unique names: later drivers and staff that share a name get a new one
+// Saves from before series slots and the no-debt payroll: cars keep a slot in every
+// series they finished since the last reset, and old debt is written off
+function _migrateFeedbackRound() {
+  const since = G.prestige.lastPrestigeAt || 0;
+  G.completedChampionships.filter(c => (c.completedAt || 0) > since).forEach(c => {
+    const car = G.cars.find(x => x.id === c.carId);
+    if (car && !(car.seriesSlots || []).includes(c.definitionId)) car.seriesSlots = [...(car.seriesSlots || []), c.definitionId];
+  });
+  if (G.money < 0) {
+    addNotification(`Your $${formatNumber(-G.money)} debt was written off: salaries can no longer push the team below zero.`, 'success');
+    G.money = 0;
+  }
+}
+
 function _migrateDuplicateNames() {
   const people = [...G.drivers, G.teamPrincipal, ...Object.values(G.raceEngineers || {})].filter(Boolean);
   const seen = new Set();
@@ -1959,6 +2085,7 @@ function resetGame() {
 function _setupNewGame() {
   const res = scoutDriver('C');
   if (res.ok) assignDriver(res.driver.id, G.cars[0].id);
+  G.nextFreeScoutAt = 0;
 }
 
 // ─── Formatting Helpers ───────────────────────────────────────────────────────

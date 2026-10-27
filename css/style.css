@@ -1124,6 +1124,25 @@ select { font-family: inherit; }
 .sell-blocked { font-size: 10px; color: var(--text-3); margin-top: 3px; max-width: 180px; text-align: right; }
 .dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
 
+/* ─── Player feedback round: sponsors, garage, drivers ──────────────────────── */
+.cls-series { font-size: 11px; color: var(--text-2); margin: 4px 0 6px; line-height: 1.4; }
+.cls-series-locked { color: var(--text-3, #666); }
+.driver-salary { color: var(--amber); }
+.sponsor-held-rate { display: block; font-size: 11px; color: var(--text-2); font-weight: 400; }
+.sponsor-offer-preview {
+  display: flex; flex-direction: column; gap: 6px;
+  background: var(--bg-2); border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 12px;
+}
+.offer-row { font-size: 12px; color: var(--text-2); }
+.offer-preview-note { font-size: 11px; color: var(--text-2); font-style: italic; margin-top: 4px; }
+.dialog-offer {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  font-size: 12px; padding: 8px 0; border-top: 1px solid var(--border);
+}
+.dialog-offer:first-of-type { margin-top: 10px; }
+.dialog-replace-btn { font-size: 12px; flex-shrink: 0; }
+.dialog-list ul { margin: 4px 0 0; padding-left: 16px; }
+
 /* ─── Next-season registrations (Championships) ───────────────────────────── */
 .next-season-list { display: flex; flex-direction: column; gap: 6px; margin-bottom: 20px; }
 .next-season-row {

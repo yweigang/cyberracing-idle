@@ -12,7 +12,6 @@ let _tpCandidates = [];
 let _hiringRECarId = null;     // carId being hired for, or null
 let _reCandidates = [];
 let _confirmingReset = false;
-let _confirmingPrestige = false;
 
 // ─── Tab Navigation ───────────────────────────────────────────────────────────
 
@@ -119,7 +118,11 @@ function updateCurrencyBar() {
   document.getElementById('hud-money').textContent = '$' + formatNumber(G.money);
   document.getElementById('hud-rep').textContent = formatNumber(G.reputation) + ' REP';
   document.getElementById('hud-pp').textContent = G.prestigePoints + ' PP';
-  document.getElementById('hud-ips').textContent = '$' + formatNumber(calcTotalIncomePerSec()) + '/s';
+  const ipsEl = document.getElementById('hud-ips');
+  const heldIps = calcSponsorHeldPerSec();
+  ipsEl.textContent = '$' + formatNumber(calcTotalIncomePerSec()) + '/s';
+  ipsEl.title = `Paid now: $${formatNumber(calcSponsorIncomePerSec())}/s (bonuses included)`
+    + (heldIps > 0 ? `\nHeld until targets are met: +$${formatNumber(heldIps)}/s` : '');
   document.getElementById('hud-season-label').textContent = 'Season ' + G.season;
   document.getElementById('hud-season').textContent = formatClock(getSeasonTimeLeft());
 }
@@ -248,6 +251,15 @@ function _confirmSellCar(carId) {
   });
 }
 
+// Series a car class can race, with the REP still needed for locked ones
+function _classSeriesText(cls) {
+  const series = CHAMPIONSHIPS.filter(c => c.allowedClasses.includes(cls.id));
+  if (!series.length) return '';
+  return 'Races: ' + series.map(c => G.reputation >= (c.repRequired || 0)
+    ? c.shortName
+    : `<span class="cls-series-locked">${c.shortName} (${formatNumber(c.repRequired)} REP)</span>`).join(' · ');
+}
+
 function renderGarage() {
   const container = document.getElementById('panel-garage');
 
@@ -309,6 +321,7 @@ function renderGarage() {
         <div class="cls-name" style="color: ${cls.color}">${cls.name}</div>
         <div class="cls-owned" data-live-owned="${cls.id}">${owned}/${cls.maxOwned}</div>
         ${lockMsg ? `<div class="cls-lock">${lockMsg}</div>` : ''}
+        <div class="cls-series">${_classSeriesText(cls)}</div>
         <button class="btn buy-car-btn ${canBuy ? '' : 'disabled'}"
           data-class="${cls.id}" ${canBuy ? '' : 'disabled'}>
           $${formatNumber(cls.baseCost)}
@@ -400,7 +413,7 @@ function renderGarage() {
           <div class="car-meta">
             ${driver ? '' : '<span class="meta-pill">⚡ No Driver</span>'}
             <span class="meta-pill ${activeChamp ? 'in-champ' : ''}">
-              ${activeChamp ? '🏁 ' + champDef.shortName + ' R' + activeChamp.currentRound + '/' + activeChamp.maxRounds : '◯ No Championship'}
+              ${activeChamp ? '🏁 ' + champDef.shortName + ' R' + Math.min(activeChamp.currentRound + 1, activeChamp.maxRounds) + '/' + activeChamp.maxRounds : '◯ No Championship'}
             </span>
           </div>
           ${_renderLineup(car)}
@@ -591,11 +604,13 @@ function renderChampionships() {
     const repOk    = G.reputation >= (champDef.repRequired || 0);
     const prereqOk = checkChampionshipPrerequisite(champDef);
     const hardLocked = !repOk || !prereqOk;
-    const canAfford  = G.money >= champDef.entryFee;
     const timeOk     = fitsInSeason(champDef);
     const completions = G.champCompletions[champDef.id] || 0;
     const selCar = _selectedCarForChamp ? G.cars.find(c => c.id === _selectedCarForChamp) : null;
     const selFits = selCar && champDef.allowedClasses.includes(selCar.classId);
+    const fee = getEntryFee(champDef, selFits ? selCar : null);
+    const renewal = selFits && hasSeriesSlot(selCar, champDef);
+    const canAfford  = G.money >= fee;
     const selBusy = !!(selCar && selCar.championshipId);
     const canEnter   = !hardLocked && canAfford && timeOk && !selBusy;
     // Next-season registration: offered when this season can't take the selected car
@@ -620,7 +635,7 @@ function renderChampionships() {
       lockReasons.push(`<span class="lock-reason prereq">🏆 Complete ${label} first</span>`);
     }
     if (!hardLocked && !canAfford)
-      lockReasons.push(`<span class="lock-reason money">💰 $${formatNumber(champDef.entryFee)} entry fee</span>`);
+      lockReasons.push(`<span class="lock-reason money">💰 $${formatNumber(fee)} entry fee</span>`);
     if (!hardLocked && !timeOk)
       lockReasons.push(`<span class="lock-reason time">⏱ Needs ${formatClock(getChampionshipDuration(champDef))} — season ends in ${formatClock(getSeasonTimeLeft())}</span>`);
 
@@ -640,16 +655,20 @@ function renderChampionships() {
           <span>🌧 ${Math.round((champDef.wetChance || 0) * 100)}% wet</span>
           <span>🏁 Field ★ ${fieldStr}${selRating !== null ? ` · yours ★ ${selRating}` : ''}</span>
           <span>💰 P1 $${formatNumber(p1Prize)}/round</span>
-          <span>📈 P1 +${champDef.repPerRound} REP</span>
+          <span>📈 P1 +${formatNumber(Math.round(getRoundRep(champDef, fieldClass)))} REP/round</span>
+          <span>🏆 Prize pool: P1 $${formatNumber(p1Prize * champDef.rounds * STANDING_BONUS[0])} · P5 $${formatNumber(p1Prize * champDef.rounds * STANDING_BONUS[4])}</span>
+          <span>🎟 ${renewal
+            ? `Renewal $${formatNumber(fee)} (${selCar.name} has a slot)`
+            : `First entry $${formatNumber(champDef.entryFee)} · renewals $${formatNumber(Math.round(champDef.entryFee * RENEWAL_FEE_SHARE))}`}</span>
         </div>
         ${lockReasons.length > 0 ? `<div class="champ-lock-reasons">${lockReasons.join('')}</div>` : ''}
         ${offerRegister
           ? `<button class="btn register-champ-btn" data-champ="${champDef.id}" ${canRegister ? '' : 'disabled'}>
-              ${selReg ? (selReg.definitionId === champDef.id ? '✓ Registered for next season' : `Already registered for ${getChampionshipById(selReg.definitionId).shortName}`) : `📅 Register for next season — $${formatNumber(champDef.entryFee)}`}
+              ${selReg ? (selReg.definitionId === champDef.id ? '✓ Registered for next season' : `Already registered for ${getChampionshipById(selReg.definitionId).shortName}`) : `📅 Register for next season — $${formatNumber(fee)}`}
             </button>`
           : `<button class="btn enter-champ-btn ${canEnter ? '' : 'disabled'}"
               data-champ="${champDef.id}" ${canEnter ? '' : 'disabled'}>
-              Enter — $${formatNumber(champDef.entryFee)}
+              Enter — $${formatNumber(fee)}
             </button>`}
       </div>`;
   });
@@ -790,7 +809,8 @@ function renderDrivers() {
     const def = DRIVER_TIERS[tier];
     const cfg = DRIVER_STAT_CONFIG[tier];
     const isLocked = def.locked;
-    const canAfford = !isLocked && G.money >= def.scoutCost;
+    const scoutWait = tier === 'C' ? getFreeScoutWait() : 0;
+    const canAfford = !isLocked && G.money >= def.scoutCost && scoutWait === 0;
 
     const budgetLabel = `Budget: ${cfg.budgetMin}–${cfg.budgetMax} pts`;
     const lockTooltip = isLocked ? 'title="Unlocked via Prestige milestones"' : '';
@@ -804,11 +824,12 @@ function renderDrivers() {
         <div class="scout-rarity" style="color: ${isLocked ? '#444' : ''}">${def.rarity}</div>
         <div class="scout-budget" style="color: ${isLocked ? '#333' : ''}">${budgetLabel}</div>
         <div class="scout-budget" style="color: ${isLocked ? '#333' : ''}">Licenses: ${(TIER_STARTING_LICENSES[tier] || ['GT4']).filter(id => isSingleSeaterUnlocked() || id[0] !== 'F').join(', ')}</div>
+        <div class="scout-budget" style="color: ${isLocked ? '#333' : ''}">Pace ${cfg.paceMin}+ · ${def.salary ? `$${formatNumber(def.salary)}/season salary` : isLocked ? 'Contract prepaid' : 'No salary'}</div>
         ${isLocked
           ? `<div class="scout-locked-msg">Unlocked via Prestige</div>`
           : `<button class="btn scout-btn ${canAfford ? '' : 'disabled'}"
                data-tier="${tier}" ${canAfford ? '' : 'disabled'}>
-               ${def.scoutCost === 0 ? 'Free Scout' : '$' + formatNumber(def.scoutCost)}
+               ${def.scoutCost === 0 ? (scoutWait > 0 ? `Free in ${Math.ceil(scoutWait)}s` : 'Free Scout') : '$' + formatNumber(def.scoutCost)}
              </button>`
         }
       </div>`;
@@ -860,6 +881,7 @@ function renderDrivers() {
           <div class="driver-meta">
             <span class="driver-xp" title="Banked XP becomes stat points at season end">XP ${Math.floor(driver.xp)} · +${Math.floor(driver.xp / XP_PER_STAT_POINT)} stat pts</span>
             <span class="driver-ret-age">Retires ~${retAge}</span>
+            ${getDriverSalary(driver) ? `<span class="driver-salary">$${formatNumber(getDriverSalary(driver))}/season</span>` : ''}
           </div>
           ${renderDriverLicenses(driver)}
           <div class="driver-assign">
@@ -946,6 +968,10 @@ function renderSponsors() {
         <span class="sponsor-overview-value" id="sponsor-held-ips">+$${formatNumber(calcSponsorHeldPerSec())}/s</span>
       </div>
       <div class="sponsor-overview-stat">
+        <span class="sponsor-overview-label">Sponsor Bonus</span>
+        <span class="sponsor-overview-value" title="Team Principal, Hospitality and prestige bonuses">+${Math.round((_sponsorMult() - 1) * 100)}%</span>
+      </div>
+      <div class="sponsor-overview-stat">
         <span class="sponsor-overview-label">Season</span>
         <span class="sponsor-overview-value">${G.season}</span>
       </div>
@@ -966,7 +992,7 @@ function renderSponsors() {
           <div class="sponsor-meta sponsor-meta-starter">Family Support · Permanent</div>
         </div>
         <div class="sponsor-ips-col">
-          <div class="sponsor-ips-value">$8/s</div>
+          <div class="sponsor-ips-value">$${formatNumber(getFamilySupportPerSec())}/s</div>
         </div>
       </div>
       <div class="sponsor-card-footer">
@@ -1035,8 +1061,8 @@ function renderSponsors() {
                 <div class="sponsor-meta" style="color: ${tierDef.color}">${catDef ? catDef.name : ''} · ${tierDef.label}</div>
               </div>
               <div class="sponsor-ips-col">
-                <div class="sponsor-ips-value" data-live-sponsor-ips="${sponsor.id}">$${formatNumber(sponsor.incomePerSec)}/s</div>
-                ${sponsor.target ? `<div class="sponsor-held" data-live-held="${sponsor.id}">held: $${formatNumber(sponsor.heldBack || 0)}</div>` : ''}
+                <div class="sponsor-ips-value" data-live-sponsor-ips="${sponsor.id}">${_sponsorRateText(sponsor)}</div>
+                ${sponsor.target ? `<div class="sponsor-held" data-live-held="${sponsor.id}">held so far: $${formatNumber(sponsor.heldBack || 0)}</div>` : ''}
               </div>
             </div>
             <div class="sponsor-details">
@@ -1055,10 +1081,18 @@ function renderSponsors() {
 
   // ── Sign sponsor panel
   const offers = getSponsorOffers();
+  const freeSlot = G.sponsors.slice(0, slotsUnlocked).some(s => !s);
+  if (_signingSlotIndex === null && !freeSlot) {
+    html += `<div class="section-header">OFFERS THIS SEASON</div>`;
+    html += offers.length
+      ? `<div class="sponsor-offer-preview">${offers.map(o => `<div class="offer-row">${_offerSummary(o)}</div>`).join('')}
+           <div class="offer-preview-note">All slots are full. Use ✕ on a sponsor to replace it with one of these.</div></div>`
+      : `<div class="empty-state">No offers left this season. New sponsors approach you in season ${G.season + 1}.</div>`;
+  }
   if (_signingSlotIndex !== null) {
     html += `
       <div class="section-header">SPONSOR OFFERS — Slot ${_signingSlotIndex + 1} · Season ${G.season}</div>`;
-    if (offers.length === 0) html += '<div class="empty-state">No offers left this season. New sponsors approach you next season.</div>';
+    if (offers.length === 0) html += `<div class="empty-state">No offers left this season. New sponsors approach you in season ${G.season + 1}.</div>`;
     html += `
       <div class="sponsor-options-grid">`;
     offers.forEach(opt => {
@@ -1135,7 +1169,56 @@ function renderSponsors() {
   // Events — terminate
   container.querySelectorAll('.terminate-sponsor-btn').forEach(btn => {
     btn.addEventListener('click', () => {
-      const result = terminateSponsor(btn.dataset.id);
+      _confirmTerminateSponsor(btn.dataset.id);
+    });
+  });
+}
+
+// "$69/s now + $23/s held" for a sponsor, bonuses included
+function _sponsorRateText(sponsor) {
+  const r = getSponsorPayRates(sponsor);
+  return `$${formatNumber(r.now)}/s` + (r.held > 0 ? ` <span class="sponsor-held-rate">+ $${formatNumber(r.held)}/s held</span>` : '');
+}
+
+// One-line description of a sponsor offer
+function _offerSummary(opt) {
+  const tierDef = SPONSOR_TIERS[opt.tier];
+  const contract = opt.seasonsRemaining !== null ? `${opt.seasonsRemaining} season${opt.seasonsRemaining !== 1 ? 's' : ''}` : 'ongoing';
+  return `<b style="color:${tierDef.color}">${opt.name}</b> · ${tierDef.label} · $${formatNumber(opt.incomePerSec)}/s · ${contract} · 🎯 ${describeSponsorTarget(opt.target)}`;
+}
+
+// Asks before ending a sponsor contract, showing the offers that could replace it
+function _confirmTerminateSponsor(sponsorId) {
+  const sponsor = G.sponsors.find(s => s && s.id === sponsorId);
+  if (!sponsor) return;
+  const offers = getSponsorOffers();
+  const held = Math.round(sponsor.heldBack || 0);
+  const points = [
+    `${sponsor.name} stops paying immediately.`,
+    held > 0 ? `<span class="dialog-warn">Its $${formatNumber(held)} held-back income is forfeited.</span>` : '',
+    offers.length
+      ? `${offers.length} offer${offers.length > 1 ? 's' : ''} left this season. Replace it directly:`
+      : `<span class="dialog-warn">No more offers until season ${G.season + 1}: the slot stays empty until then.</span>`,
+  ].filter(Boolean);
+  const offerHtml = offers.map(o => `
+    <div class="dialog-offer">
+      <span>${_offerSummary(o)}</span>
+      <button class="btn dialog-replace-btn" data-offer="${o.id}">Replace</button>
+    </div>`).join('');
+  showConfirmDialog({
+    title: `End ${sponsor.name}'s contract?`,
+    body: `<ul class="dialog-list">${points.map(p => `<li>${p}</li>`).join('')}</ul>${offerHtml}`,
+    confirmLabel: 'End contract',
+    danger: true,
+    onConfirm: () => {
+      terminateSponsor(sponsorId);
+      renderSponsors();
+    },
+  });
+  document.querySelectorAll('#confirm-dialog .dialog-replace-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      closeConfirmDialog();
+      const result = replaceSponsor(sponsorId, btn.dataset.offer);
       if (!result.ok) addNotification(result.msg, 'error');
       renderSponsors();
     });
@@ -1163,9 +1246,9 @@ function updateSponsorsLive() {
   G.sponsors.forEach(s => {
     if (!s) return;
     const ipsEl = document.querySelector(`[data-live-sponsor-ips="${s.id}"]`);
-    if (ipsEl) ipsEl.textContent = '$' + formatNumber(s.incomePerSec) + '/s';
+    if (ipsEl) ipsEl.innerHTML = _sponsorRateText(s);
     const heldEl = document.querySelector(`[data-live-held="${s.id}"]`);
-    if (heldEl) heldEl.textContent = 'held: $' + formatNumber(s.heldBack || 0);
+    if (heldEl) heldEl.textContent = 'held so far: $' + formatNumber(s.heldBack || 0);
 
     const targetEl = document.querySelector(`[data-live-target="${s.id}"]`);
     if (targetEl) {
@@ -1219,16 +1302,15 @@ function renderStaff() {
   const container = document.getElementById('panel-staff');
   const tp = G.teamPrincipal;
 
-  // ── Season salary preview
-  let totalSalary = tp ? tp.salary : 0;
-  if (G.raceEngineers) Object.values(G.raceEngineers).forEach(re => { totalSalary += re.salary; });
+  // ── Season salary preview (staff and drivers)
+  const totalSalary = getSeasonSalaryTotal();
 
   let html = `
     <div class="section-header">STAFF</div>
     <div class="staff-overview-bar">
       <div class="staff-overview-stat">
         <span class="staff-overview-label">Season Salary Bill</span>
-        <span class="staff-overview-value" style="color:var(--red)">${totalSalary > 0 ? '-$' + formatNumber(totalSalary) + '/season' : 'No salaries'}</span>
+        <span class="staff-overview-value" style="color:var(--red)" title="Staff and drivers">${isSalaryFreeSeason() ? 'None this season (reset)' : totalSalary > 0 ? '-$' + formatNumber(totalSalary) + '/season' : 'No salaries'}</span>
       </div>
     </div>`;
 
@@ -1312,7 +1394,7 @@ function renderStaff() {
             <div class="staff-bonuses">
               <span>+${(reB.setupBonus*100).toFixed(0)}% car rating</span>
               <span>+${(reB.reliBonus*100).toFixed(0)}% reliability</span>
-              <span>+${(reB.pitBonus*100).toFixed(1)}% income</span>
+              <span title="Strategy calls gain places">+${(reB.pitBonus*100).toFixed(1)}% prize money</span>
               <span>+${(reB.coachBonus*100).toFixed(0)}% XP</span>
               <span>+${(reB.dataBonus*100).toFixed(0)}% payout</span>
             </div>
@@ -1416,13 +1498,51 @@ function renderStaff() {
 
 // ─── Prestige Panel ───────────────────────────────────────────────────────────
 
+// Warns when the PP after a reset won't buy anything in the shop
+function _prestigeBuyWarning(ppGain) {
+  const cheapest = getCheapestPrestigeItem();
+  if (!cheapest || G.prestigePoints + ppGain >= cheapest.cost) return '';
+  return `<br><span class="dialog-warn">After this reset you'd have ${G.prestigePoints + ppGain} PP: the cheapest shop item costs ${cheapest.cost} PP.</span>`;
+}
+
+// Asks before a prestige reset, listing what is kept and lost
+function _confirmPrestige() {
+  const ppGain = calcPrestigePoints();
+  const tokens = G.prestige.permanentBonuses.devTokens || 0;
+  const cheapest = getCheapestPrestigeItem();
+  const totalPP = G.prestigePoints + ppGain;
+  const lost = [
+    `Money: $${formatNumber(G.money)} → $${formatNumber(getPrestigeStartMoney())}`,
+    `Cars: ${tokens ? `the best ${tokens} plus a GT4` : 'one stock GT4'} (${G.cars.length} now)`,
+    'Running championships, registrations and sponsor contracts',
+    'Pit crew, car preparation above level 2, setup knowledge and HQ',
+  ];
+  const kept = 'Drivers, licenses, REP, garage, staff and PP. No salaries are due for the season of the reset.';
+  showConfirmDialog({
+    title: `Prestige reset for +${ppGain} PP?`,
+    body: `<ul class="dialog-list">
+        <li>You lose: <ul>${lost.map(l => `<li>${l}</li>`).join('')}</ul></li>
+        <li>You keep: ${kept}</li>
+        <li>${cheapest && totalPP < cheapest.cost
+          ? `<span class="dialog-warn">You'll have ${totalPP} PP, but the cheapest shop item costs ${cheapest.cost} PP.</span>`
+          : `You'll have ${totalPP} PP to spend in the shop.`}</li>
+      </ul>`,
+    confirmLabel: `Reset for +${ppGain} PP`,
+    danger: true,
+    onConfirm: () => {
+      const result = doPrestige();
+      if (!result.ok) addNotification(result.msg, 'error');
+      renderPrestige();
+    },
+  });
+}
+
 function renderPrestige() {
   const container = document.getElementById('panel-prestige');
 
   // ── Season clock
   const completedThisSeason = G.completedChampionships.filter(c => c.season === G.season);
-  let totalSalary = G.teamPrincipal ? (G.teamPrincipal.salary || 0) : 0;
-  if (G.raceEngineers) Object.values(G.raceEngineers).forEach(re => { totalSalary += re.salary || 0; });
+  const totalSalary = getSeasonSalaryTotal();
   const leftSec = getSeasonTimeLeft();
   const seasonPct = 100 - (leftSec / SEASON_LENGTH_SEC) * 100;
   const titles = completedThisSeason.filter(c => c.finalPosition === 1).length;
@@ -1438,7 +1558,7 @@ function renderPrestige() {
         <span>${completedThisSeason.length} championship${completedThisSeason.length !== 1 ? 's' : ''} completed</span>
         <span>${titles} title${titles !== 1 ? 's' : ''}</span>
         <span>${G.activeChampionships.length} in progress</span>
-        <span>Salaries due: ${totalSalary > 0 ? '$' + formatNumber(totalSalary) : 'none'}</span>
+        <span title="Staff and drivers. If the money doesn't cover it, the best-paid people leave.">Salaries due: ${isSalaryFreeSeason() ? 'none (reset season)' : totalSalary > 0 ? '$' + formatNumber(totalSalary) : 'none'}</span>
       </div>
     </div>`;
 
@@ -1514,10 +1634,11 @@ function renderPrestige() {
       <div class="prestige-pp">You have <span class="pp-value">${G.prestigePoints} PP</span></div>
       <div class="prestige-gain">Resetting now grants <span class="pp-gain">+${ppGain} PP</span>
         <span class="prestige-warning">(titles and podiums since the last reset, 1 PP per ${formatNumber(PRESTIGE_REP_PER_PP)} REP gained, ${HQ_PP_PER_LEVEL} PP per HQ level)</span></div>
-      <div class="prestige-warning">Starts the team over: $5,000, one stock GT4 (plus a car per Development Token), no sponsors, HQ rebuilt. Drivers, licenses, REP, garage, staff and PP stay.
+      <div class="prestige-warning">Starts the team over: $${formatNumber(getPrestigeStartMoney())}, one stock GT4 (plus a car per Development Token), no sponsors, HQ rebuilt. Drivers, licenses, REP, garage, staff and PP stay, and no salaries are due for that season.
+        ${_prestigeBuyWarning(ppGain)}
         ${(G.prestige.prestigeCount || 0) === 0 ? '<br>Your first reset unlocks the <b>Single-Seater Pathway</b> (F4 → F1).' : ''}</div>
       <button class="btn btn-prestige ${canP ? '' : 'disabled'}" id="prestige-btn" ${canP ? '' : 'disabled'}>
-        ${!canP ? `Earn ${PRESTIGE_MIN_GAIN} PP to reset · ${ppGain} so far` : _confirmingPrestige ? `Confirm reset — +${ppGain} PP` : `Prestige — +${ppGain} PP`}
+        ${!canP ? `Earn ${PRESTIGE_MIN_GAIN} PP to reset · ${ppGain} so far` : `Prestige — +${ppGain} PP`}
       </button>
     </div>
     <div class="section-header">PRESTIGE SHOP</div>
@@ -1562,17 +1683,9 @@ function renderPrestige() {
 
   container.innerHTML = html;
 
-  // Events — prestige (two clicks)
+  // Events — prestige (confirmation dialog)
   const prestigeBtn = container.querySelector('#prestige-btn');
-  if (prestigeBtn) {
-    prestigeBtn.addEventListener('click', () => {
-      if (!_confirmingPrestige) { _confirmingPrestige = true; renderPrestige(); return; }
-      _confirmingPrestige = false;
-      const result = doPrestige();
-      if (!result.ok) addNotification(result.msg, 'error');
-      renderPrestige();
-    });
-  }
+  if (prestigeBtn) prestigeBtn.addEventListener('click', _confirmPrestige);
 
   container.querySelectorAll('.prestige-buy-btn').forEach(btn => {
     btn.addEventListener('click', () => {
@@ -1686,9 +1799,22 @@ function fastRefresh() {
     updateSeasonLive();
     updateHQLive();
     updateSponsorsLive();
+    updateDriversLive();
   } catch (e) {
     console.error('[fastRefresh] error:', e);
   }
+}
+
+// Free scout countdown on the Drivers tab
+function updateDriversLive() {
+  if (_activeTab !== 'drivers') return;
+  const btn = document.querySelector('.scout-btn[data-tier="C"]');
+  if (!btn) return;
+  const wait = getFreeScoutWait();
+  const label = wait > 0 ? `Free in ${Math.ceil(wait)}s` : 'Free Scout';
+  if (btn.textContent.trim() !== label) btn.textContent = label;
+  btn.disabled = wait > 0;
+  btn.classList.toggle('disabled', wait > 0);
 }
 
 // ─── Targeted in-place garage updates ────────────────────────────────────────

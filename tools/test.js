@@ -9,8 +9,8 @@ const assert = (cond, msg) => { if (!cond) throw new Error(msg || 'assertion fai
 function setup(opts) {
   const g = createGame({ seed: 42, ...opts });
   g.run(`G.money = 1e9;`);
-  const a = g.run(`scoutDriver('C').driver.id`);
-  const b = g.run(`scoutDriver('C').driver.id`);
+  const a = g.run(`(G.nextFreeScoutAt = 0, scoutDriver('C')).driver.id`);
+  const b = g.run(`(G.nextFreeScoutAt = 0, scoutDriver('C')).driver.id`);
   const car = g.run(`G.cars[0].id`);
   return { g, a, b, car };
 }
@@ -154,7 +154,7 @@ test('Two GT4 Cup titles earn the GT3 license', () => {
 
 test('Lower finishes earn a share of the LP', () => {
   const { g } = setup();
-  const pts = g.run(`(() => { const d = scoutDriver('C').driver; return awardChampionshipLP(d, 'GT4', 6, null).GT3; })()`);
+  const pts = g.run(`(() => { const d = (G.nextFreeScoutAt = 0, scoutDriver('C')).driver; return awardChampionshipLP(d, 'GT4', 6, null).GT3; })()`);
   assert(pts === 5, 'P6 earns 20% of 25 GT3 LP, got ' + pts);
 });
 
@@ -531,6 +531,63 @@ test('Saves with duplicate entry ids are repaired', () => {
   assert(ids[0] !== ids[1], 'duplicate id replaced');
   assert(g.run('G.cars.every(c => G.activeChampionships.find(e => e.id === c.championshipId).carId === c.id)'), 'each car points at its own entry');
   assert(g.run('G.nextEntryId') > Math.max(...ids.map(i => +i.match(/\d+$/)[0])), 'counter moved past ids in use');
+});
+
+test('Unpaid salaries make the best-paid people leave instead of going into debt', () => {
+  const { g, a, car } = setup();
+  g.run(`assignDriver('${a}', '${car}'); G.money = 30000; const s = scoutDriver('A'); G.money = 3000; G.teamPrincipal = { name: 'TP Test', salary: 10000 };`);
+  g.run(`G.money = 3000; endSeason()`);
+  assert(g.run('G.money') >= 0, 'money never negative');
+  assert(g.run('G.teamPrincipal') === null, 'TP left');
+  assert(!g.run(`G.drivers.some(d => d.tier === 'A')`), 'the A driver left');
+});
+
+test('Drivers are paid every season by tier', () => {
+  const { g } = setup();
+  g.run(`scoutDriver('A'); scoutDriver('B');`);
+  const m = g.run('G.money');
+  g.run('endSeason()');
+  assert(m - g.run('G.money') === 17000, 'A 15k + B 2k, got ' + (m - g.run('G.money')));
+});
+
+test('No salaries are due in the season of a prestige reset, and Investor Backing adds money', () => {
+  const { g } = setup();
+  g.run(`scoutDriver('A'); G.prestigePoints = 10; buyPrestigeItem('seed_money'); G.reputation = 40000;`);
+  assert(g.run('doPrestige().ok'), 'prestige');
+  assert(g.run('G.money') === 30000, 'start money 5k + 25k');
+  g.run('endSeason()');
+  assert(g.run('G.money') >= 30000, 'no salaries paid');
+});
+
+test('A car that raced a series renews at a quarter of the fee', () => {
+  const { g, a, car } = setup();
+  g.run(`assignDriver('${a}', '${car}')`);
+  finishChamp(g, 'gt4_regional', car);
+  const m = g.run('G.money');
+  assert(g.run(`enterChampionship('gt4_regional', '${car}').ok`), 'renew');
+  assert(m - g.run('G.money') === 1250, 'renewal fee 25% of 5000');
+});
+
+test('Faster classes earn more REP in the same series', () => {
+  const { g } = setup();
+  assert(g.run(`getRoundRep(getChampionshipById('fia_wec'), 'HYPERCAR') > getRoundRep(getChampionshipById('fia_wec'), 'GT3')`), 'hypercar earns more');
+  assert(g.run(`getRoundRep(getChampionshipById('fia_wec'), 'GT3') === getChampionshipById('fia_wec').repPerRound`), 'slowest class earns the base');
+});
+
+test('The free scout has a cooldown and paid drivers meet the pace floor', () => {
+  const { g } = setup();
+  assert(!g.run(`scoutDriver('C').ok`), 'second free scout blocked');
+  g.advance(91e3);
+  assert(g.run(`scoutDriver('C').ok`), 'available again after the cooldown');
+  for (let i = 0; i < 20; i++) assert(g.run(`scoutDriver('A').driver.pace`) >= 32, 'A pace floor');
+});
+
+test('A championship cut short by the season end refunds its fee', () => {
+  const { g, a, car } = setup();
+  g.run(`assignDriver('${a}', '${car}'); enterChampionship('gt4_regional', '${car}');`);
+  const m = g.run('G.money');
+  g.run('endSeason()');
+  assert(g.run('G.money') === m + 5000, 'fee refunded');
 });
 
 let failed = 0;
