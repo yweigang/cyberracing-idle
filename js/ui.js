@@ -248,7 +248,7 @@ function renderGarage() {
   }
 
   // Buy car buttons
-  container.querySelectorAll('.buy-car-btn:not([disabled])').forEach(btn => {
+  container.querySelectorAll('.buy-car-btn').forEach(btn => {
     btn.addEventListener('click', () => {
       const result = buyCar(btn.dataset.class);
       if (!result.ok) addNotification(result.msg, 'error');
@@ -271,7 +271,7 @@ function renderGarage() {
   });
 
   // Upgrade buttons
-  container.querySelectorAll('.upg-btn:not([disabled])').forEach(btn => {
+  container.querySelectorAll('.upg-btn').forEach(btn => {
     btn.addEventListener('click', () => {
       const result = buyUpgrade(btn.dataset.car, btn.dataset.upg);
       if (!result.ok) addNotification(result.msg, 'error');
@@ -433,7 +433,7 @@ function renderChampionships() {
     renderChampionships();
   });
 
-  container.querySelectorAll('.enter-champ-btn:not([disabled])').forEach(btn => {
+  container.querySelectorAll('.enter-champ-btn').forEach(btn => {
     btn.addEventListener('click', () => {
       if (!_selectedCarForChamp) {
         addNotification('Select a car first.', 'error');
@@ -629,7 +629,7 @@ function renderDrivers() {
 
   container.innerHTML = scoutHtml + rosterHtml;
 
-  container.querySelectorAll('.scout-btn:not([disabled])').forEach(btn => {
+  container.querySelectorAll('.scout-btn').forEach(btn => {
     btn.addEventListener('click', () => {
       const result = scoutDriver(btn.dataset.tier);
       if (result.ok) {
@@ -849,7 +849,7 @@ function renderSponsors() {
   container.innerHTML = html;
 
   // Events — sign slot
-  container.querySelectorAll('.sign-sponsor-btn:not([disabled])').forEach(btn => {
+  container.querySelectorAll('.sign-sponsor-btn').forEach(btn => {
     btn.addEventListener('click', () => {
       _signingSlotIndex = parseInt(btn.dataset.slot);
       renderSponsors();
@@ -1309,7 +1309,7 @@ function renderPrestige() {
   container.innerHTML = html;
 
   // Events — prestige (two clicks)
-  const prestigeBtn = container.querySelector('#prestige-btn:not([disabled])');
+  const prestigeBtn = container.querySelector('#prestige-btn');
   if (prestigeBtn) {
     prestigeBtn.addEventListener('click', () => {
       if (!_confirmingPrestige) { _confirmingPrestige = true; renderPrestige(); return; }
@@ -1320,7 +1320,7 @@ function renderPrestige() {
     });
   }
 
-  container.querySelectorAll('.prestige-buy-btn:not([disabled])').forEach(btn => {
+  container.querySelectorAll('.prestige-buy-btn').forEach(btn => {
     btn.addEventListener('click', () => {
       const result = buyPrestigeItem(btn.dataset.item);
       if (!result.ok) addNotification(result.msg, 'error');
@@ -1401,7 +1401,7 @@ function renderHQ() {
   html += '</div>';
   container.innerHTML = html;
 
-  container.querySelectorAll('.hq-buy-btn:not([disabled])').forEach(btn => {
+  container.querySelectorAll('.hq-buy-btn').forEach(btn => {
     btn.addEventListener('click', () => {
       const result = buyHQ(btn.dataset.hq);
       if (!result.ok) addNotification(result.msg, 'error');
