@@ -365,6 +365,16 @@ test('Saves from before lineups load with empty co-driver seats', () => {
   assert(Array.isArray(g.run('G.cars[0].coDriverIds')), 'coDriverIds added on load');
 });
 
+test('The team is called Cyberracing by default and can be renamed', () => {
+  const { g } = setup();
+  assert(g.run('G.teamName') === 'Cyberracing', 'default name');
+  assert(g.run(`renameTeam('  Neon   <b>Apex</b> Racing ').name`) === 'Neon bApex/b Racing', 'trimmed, markup characters dropped');
+  assert(!g.run(`renameTeam('   ').ok`) && g.run('G.teamName') === 'Neon bApex/b Racing', 'empty name rejected');
+  assert(g.run(`renameTeam('x'.repeat(40)).name.length`) === g.run('TEAM_NAME_MAX_LENGTH'), 'length capped');
+  g.run(`delete G.teamName; saveGame(); loadGame();`);
+  assert(g.run('G.teamName') === 'Cyberracing', 'old saves get the default name');
+});
+
 let failed = 0;
 for (const t of tests) {
   try { t.fn(); console.log('PASS', t.name); }

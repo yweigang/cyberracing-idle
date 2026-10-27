@@ -46,7 +46,39 @@ function renderActivePanel() {
 
 // ─── Currency Bar ─────────────────────────────────────────────────────────────
 
+// Swaps the team name in the HUD for a text field; Enter or leaving the field saves, Esc cancels
+function startTeamRename() {
+  const wrap = document.getElementById('hud-team-wrap');
+  if (wrap.querySelector('input')) return;
+  wrap.innerHTML = `<input id="hud-team-input" maxlength="${TEAM_NAME_MAX_LENGTH}" aria-label="Team name">`;
+  const input = wrap.querySelector('input');
+  input.value = G.teamName || DEFAULT_TEAM_NAME;
+  input.focus();
+  input.select();
+  let done = false;
+  const finish = save => {
+    if (done) return;
+    done = true;
+    if (save) {
+      const result = renameTeam(input.value);
+      if (!result.ok) addNotification(result.msg, 'error');
+      else { addNotification(`Team renamed to ${result.name}.`, 'success'); saveGame(); }
+    }
+    wrap.innerHTML = `<span id="hud-team"></span><button class="hud-rename-btn" id="hud-rename-btn" title="Rename team" aria-label="Rename team">✎</button>`;
+    wrap.querySelector('#hud-rename-btn').addEventListener('click', startTeamRename);
+    updateCurrencyBar();
+    if (_activeTab === 'championships') renderChampionships();
+  };
+  input.addEventListener('keydown', e => {
+    if (e.key === 'Enter') finish(true);
+    else if (e.key === 'Escape') finish(false);
+  });
+  input.addEventListener('blur', () => finish(true));
+}
+
 function updateCurrencyBar() {
+  const teamEl = document.getElementById('hud-team');
+  if (teamEl) teamEl.textContent = G.teamName || DEFAULT_TEAM_NAME;
   document.getElementById('hud-money').textContent = '$' + formatNumber(G.money);
   document.getElementById('hud-rep').textContent = formatNumber(G.reputation) + ' REP';
   document.getElementById('hud-pp').textContent = G.prestigePoints + ' PP';
@@ -1622,6 +1654,9 @@ function initUI() {
   document.querySelectorAll('.tab-btn').forEach(btn => {
     btn.addEventListener('click', () => switchTab(btn.dataset.tab));
   });
+
+  const renameBtn = document.getElementById('hud-rename-btn');
+  if (renameBtn) renameBtn.addEventListener('click', startTeamRename);
 
   // Initial render
   switchTab('garage');

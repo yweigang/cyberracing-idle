@@ -13,6 +13,7 @@ function createDefaultState() {
   return {
     version: '0.1.0',
     lastSave: Date.now(),
+    teamName: DEFAULT_TEAM_NAME,
     money: 5000,
     reputation: 0,
     prestigePoints: 0,
@@ -301,6 +302,16 @@ function sellCar(carId) {
 
 // ─── Garage Upgrade ───────────────────────────────────────────────────────────
 
+// ─── Team ─────────────────────────────────────────────────────────────────────
+
+// Renames the team. HTML-special characters are dropped since names are shown in markup.
+function renameTeam(name) {
+  const clean = String(name || '').replace(/[<>&"'`]/g, '').replace(/\s+/g, ' ').trim().slice(0, TEAM_NAME_MAX_LENGTH);
+  if (!clean) return { ok: false, msg: 'Team name cannot be empty.' };
+  G.teamName = clean;
+  return { ok: true, name: clean };
+}
+
 function upgradeGarage() {
   const next = getGarageNextUpgrade(G.garageLevel);
   if (!next) return { ok: false, msg: 'Garage is already at maximum capacity.' };
@@ -451,7 +462,7 @@ const getRoundPoints = pos => POINTS_TABLE[pos - 1] || 0;
 // Current standings, best first. The player's row has isPlayer: true.
 function getStandings(entry) {
   const rows = entry.field.map(r => ({ name: r.name, points: r.points, rating: r.rating, isPlayer: false }));
-  rows.push({ name: 'Your Team', points: entry.points, isPlayer: true });
+  rows.push({ name: G.teamName || DEFAULT_TEAM_NAME, points: entry.points, isPlayer: true });
   // On equal points the player ranks behind (no countback)
   return rows.sort((a, b) => b.points - a.points || (a.isPlayer ? 1 : 0) - (b.isPlayer ? 1 : 0));
 }
