@@ -1,5 +1,5 @@
 // Game release shown in the header; keep in step with js/changelog.js
-const GAME_VERSION = '0.5.1';
+const GAME_VERSION = '0.5.2';
 
 'use strict';
 
@@ -176,6 +176,8 @@ const LICENSE_TIERS = [
   { id: 'LMP2',     name: 'LMP2',     pointsRequired: 150, pathway: 'gt_endurance'  },
   { id: 'HYPERCAR', name: 'Hypercar', pointsRequired: 200, pathway: 'gt_endurance'  },
   { id: 'F4',       name: 'F4',       pointsRequired: 30,  pathway: 'single_seater' },
+  { id: 'F3',       name: 'F3',       pointsRequired: 50,  pathway: 'single_seater' },
+  { id: 'F2',       name: 'F2',       pointsRequired: 100, pathway: 'single_seater' },
   { id: 'F1',       name: 'F1',       pointsRequired: 300, pathway: 'single_seater' },
 ];
 
@@ -187,8 +189,8 @@ const CLASS_LICENSE_REQUIREMENT = {
   LMP2:    'LMP2',
   HYPERCAR:'HYPERCAR',
   F4:      'F4',
-  F3:      'F4',   // F3/F2 use F4 license — no separate tier defined
-  F2:      'F4',
+  F3:      'F3',
+  F2:      'F2',
   F1:      'F1',
 };
 
@@ -196,17 +198,16 @@ const CLASS_LICENSE_REQUIREMENT = {
 // The full amount is paid for a title; lower finishes earn a share (LICENSE_RESULT_FACTORS).
 // "—" cells in the spec (already qualified) are simply absent from each row.
 const LP_EARN_TABLE = {
-  KARTING: { F4: 10, GT4: 5,  GT3: 2,  LMP3: 1,  LMP2: 1,  HYPERCAR: 1,  F1: 1  },
-  F4:      {         GT4: 15, GT3: 8,  LMP3: 3,  LMP2: 2,  HYPERCAR: 1,  F1: 1  },
-  // GT and prototype racing also counts toward the F4 license, so any driver can cross over
-  GT4:     { F4: 10,          GT3: 25, LMP3: 10, LMP2: 6,  HYPERCAR: 4,  F1: 2  },
-  GT3:     { F4: 12,                   LMP3: 25, LMP2: 14, HYPERCAR: 9,  F1: 5  },
-  LMP3:    { F4: 15,                             LMP2: 30, HYPERCAR: 20, F1: 12 },
-  LMP2:    { F4: 20,                                       HYPERCAR: 30, F1: 20 },
-  HYPERCAR:{ F4: 30,                                                      F1: 30 },
-  // F3/F2 not in original spec — values are estimates, adjust as needed
-  F3:      {                           LMP3: 20, LMP2: 10, HYPERCAR: 6,  F1: 15 },
-  F2:      {                                     LMP2: 25, HYPERCAR: 15, F1: 25 },
+  KARTING: { F4: 10, F3: 2,  F2: 1,  GT4: 5,  GT3: 2,  LMP3: 1,  LMP2: 1,  HYPERCAR: 1,  F1: 1  },
+  F4:      {         F3: 25, F2: 8,  GT4: 15, GT3: 8,  LMP3: 3,  LMP2: 2,  HYPERCAR: 1,  F1: 2  },
+  F3:      {                 F2: 30,                   LMP3: 20, LMP2: 10, HYPERCAR: 6,  F1: 15 },
+  F2:      {                                                     LMP2: 25, HYPERCAR: 15, F1: 25 },
+  // GT and prototype racing also counts toward the single-seater licenses, so any driver can cross over
+  GT4:     { F4: 10,                            GT3: 25, LMP3: 10, LMP2: 6,  HYPERCAR: 4,  F1: 2  },
+  GT3:     { F4: 12, F3: 5,  F2: 2,                      LMP3: 25, LMP2: 14, HYPERCAR: 9,  F1: 5  },
+  LMP3:    { F4: 15, F3: 8,  F2: 4,                                LMP2: 30, HYPERCAR: 20, F1: 12 },
+  LMP2:    { F4: 20, F3: 10, F2: 6,                                          HYPERCAR: 30, F1: 20 },
+  HYPERCAR:{ F4: 30, F3: 15, F2: 10,                                                       F1: 30 },
 };
 
 // Share of the LP table earned by final championship position (last value repeats)
@@ -216,9 +217,9 @@ const LICENSE_RESULT_FACTORS = [1, 0.75, 0.6, 0.4, 0.4, 0.2, 0.2, 0.2, 0.2, 0.2,
 const TIER_STARTING_LICENSES = {
   C: ['GT4'],
   B: ['GT4', 'GT3', 'F4'],
-  A: ['GT4', 'GT3', 'LMP3', 'F4'],
-  S: ['GT4', 'GT3', 'LMP3', 'LMP2', 'F4'],
-  L: ['GT4', 'GT3', 'LMP3', 'LMP2', 'HYPERCAR', 'F4'],
+  A: ['GT4', 'GT3', 'LMP3', 'F4', 'F3'],
+  S: ['GT4', 'GT3', 'LMP3', 'LMP2', 'F4', 'F3', 'F2'],
+  L: ['GT4', 'GT3', 'LMP3', 'LMP2', 'HYPERCAR', 'F4', 'F3', 'F2'],
 };
 
 // Global LP multiplier config — wire prestige scaling here when values are finalised

@@ -881,19 +881,19 @@ function renderDriverLicenses(driver) {
     .map(lt => `<span class="dlicense-badge">${lt.name} ✓</span>`)
     .join('');
 
-  // Find the first visible license not yet held — show its progress
-  const nextTier = visibleTiers.find(lt => !licenses.includes(lt.id));
-  let progressHtml = '';
-  if (nextTier) {
+  // Progress toward the next license of each visible pathway
+  const progressHtml = [...new Set(visibleTiers.map(lt => lt.pathway))].map(pathway => {
+    const nextTier = visibleTiers.find(lt => lt.pathway === pathway && !licenses.includes(lt.id));
+    if (!nextTier) return '';
     const current = licensePoints[nextTier.id] || 0;
     const pct     = Math.min(100, Math.floor(current / nextTier.pointsRequired * 100));
-    progressHtml = `
+    return `
       <div class="dlicense-progress-row">
         <span class="dlicense-next-name">${nextTier.name} License</span>
         <span class="dlicense-pts">${current} / ${nextTier.pointsRequired} LP</span>
         <div class="dlicense-bar-wrap"><div class="dlicense-bar-fill" style="width:${pct}%"></div></div>
       </div>`;
-  }
+  }).join('');
 
   return `<div class="driver-licenses">${heldHtml ? `<div class="dlicense-row">${heldHtml}</div>` : ''}${progressHtml}</div>`;
 }

@@ -1475,6 +1475,15 @@ function _migrateDriverLicenses() {
   G.drivers.forEach(d => {
     if (!d.licenses) d.licenses = ['GT4'];
     if (!d.licensePoints) d.licensePoints = {};
+    // F3 and F2 once raced on the F4 license: drivers already in those cars keep their seat,
+    // and scouted drivers get the single-seater licenses their tier now starts with
+    if (d.licensePoints.F3 === undefined && d.licenses.includes('F4')) {
+      const car = G.cars.find(c => c.id === d.carId);
+      const grant = new Set((TIER_STARTING_LICENSES[d.tier] || []).filter(id => id === 'F3' || id === 'F2'));
+      if (car && (car.classId === 'F3' || car.classId === 'F2')) grant.add('F3');
+      if (car && car.classId === 'F2') grant.add('F2');
+      grant.forEach(id => { if (!d.licenses.includes(id)) d.licenses.push(id); });
+    }
     // Ensure every license tier has an entry
     LICENSE_TIERS.forEach(lt => {
       if (d.licensePoints[lt.id] === undefined) {

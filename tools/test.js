@@ -54,6 +54,17 @@ test('Drivers without the class license cannot be assigned', () => {
   assert(g.run(`assignDriver('${a}', '${car}').ok`) === false, 'GT4-only driver must be blocked from GT3');
 });
 
+test('F3 and F2 need their own licenses; drivers already in those cars keep their seat', () => {
+  const { g, a, b, car } = setup();
+  g.run(`G.cars[0].classId = 'F3'; G.drivers.forEach(d => { d.licenses = ['GT4', 'F4']; d.carId = null; });`);
+  assert(g.run(`assignDriver('${a}', '${car}').ok`) === false, 'F4-only driver must be blocked from F3');
+  // A save from before the F3/F2 licenses: the F3 driver is grandfathered, the free one is not
+  g.run(`G.drivers.forEach(d => { delete d.licensePoints.F3; delete d.licensePoints.F2; });
+         G.drivers.find(d => d.id === '${a}').carId = '${car}'; saveGame(); loadGame();`);
+  assert(driver(g, a).licenses.includes('F3') && !driver(g, a).licenses.includes('F2'), 'seated F3 driver keeps F3');
+  assert(!driver(g, b).licenses.includes('F3'), 'free C driver earns no F3');
+});
+
 test('Save/load round-trips and migrates drivers without license data', () => {
   const { g } = setup();
   g.run(`G.drivers.forEach(d => { delete d.licenses; delete d.licensePoints; }); saveGame(); loadGame();`);

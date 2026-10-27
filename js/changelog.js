@@ -4,6 +4,16 @@
 
 const CHANGELOG = [
   {
+    version: '0.5.2',
+    date: '2026-10-27',
+    title: 'Single-seater licenses',
+    changes: [
+      'F3 and F2 have their own licenses. F4 titles earn the F3 license, F3 titles the F2 license; endurance racing counts a little too.',
+      'Drivers already racing an F3 or F2 car keep their license, and Pro and Factory drivers start with the licenses of their tier.',
+      'Driver cards show the progress toward the next GT and the next single-seater license side by side.',
+    ],
+  },
+  {
     version: '0.5.1',
     date: '2026-10-27',
     title: 'Salary counter',
