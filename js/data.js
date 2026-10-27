@@ -476,14 +476,15 @@ const RACE_NOISE = 0.07;        // per-round performance variance (std dev, befo
 
 // Driver lineups: a car seats a lead driver plus co-drivers. Endurance series set a
 // lineupSize; a short lineup makes its fittest driver double-stint while fatigued.
-const MAX_LINEUP = 3;
+// Seats beyond the lineup size hold reserves: they don't race or earn anything, but
+// move up when a race driver leaves.
+const MAX_LINEUP = 4;             // most seats in any car: 3 race drivers + a reserve
 
 const DEFAULT_TEAM_NAME = 'Cyberracing';
 const TEAM_NAME_MAX_LENGTH = 24;
 const FATIGUE_SKILL_BASE = 0.55;        // double-stint skill share, + fitness / FATIGUE_FITNESS_DIV
 const FATIGUE_FITNESS_DIV = 500;        // fitness 50 → 65% of normal skill
 const SHORT_LINEUP_DNF_PENALTY = 0.5;   // +50% DNF chance per missing driver
-const RESERVE_LP_SHARE = 0.5;           // drivers beyond the series' lineup earn half LP
 
 const RIVAL_TEAMS = [
   'Apex Dynamics', 'Redline Works', 'Nova Motorsport', 'Iron Falcon', 'Stratos Racing',

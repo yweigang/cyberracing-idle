@@ -1136,6 +1136,8 @@ select { font-family: inherit; }
 .lineup-btn { padding: 3px 8px; font-size: 11px; flex-shrink: 0; }
 .lineup-note { font-size: 11px; color: var(--text-3); padding: 2px 2px 0; }
 .lineup-note.warn, .lineup-short { color: var(--amber); }
+.lineup-reserve { opacity: 0.75; }
+.lineup-reserve .lineup-name { color: var(--text-2); }
 
 /* ─── Car RE bar (inline in Garage) ─────────────────────────────────────── */
 .car-re-bar {

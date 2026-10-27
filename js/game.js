@@ -101,6 +101,30 @@ function getLineupSize(champDef) {
   return (champDef && champDef.lineupSize) || 1;
 }
 
+// Largest lineup any series open to this class asks for
+function getMaxLineupForClass(classId) {
+  return CHAMPIONSHIPS.filter(c => c.allowedClasses.includes(classId))
+    .reduce((m, c) => Math.max(m, getLineupSize(c)), 1);
+}
+
+// Racing seats in a car: its current series' lineup, else the largest open to its class.
+// Drivers seated beyond this are reserves.
+function getCarLineupSize(car) {
+  const entry = car.championshipId && G.activeChampionships.find(e => e.id === car.championshipId);
+  return entry ? getLineupSize(getChampionshipById(entry.definitionId)) : getMaxLineupForClass(car.classId);
+}
+
+// Seats in a car: the most race drivers its class ever needs, plus one reserve
+function getCarSeatLimit(car) {
+  return Math.min(MAX_LINEUP, getMaxLineupForClass(car.classId) + 1);
+}
+
+// Whether a driver sits in a car's reserve seats
+function isReserveDriver(driver) {
+  const car = driver.carId && G.cars.find(c => c.id === driver.carId);
+  return !!car && getCarLineup(car).findIndex(d => d.id === driver.id) >= getCarLineupSize(car);
+}
+
 // Seats a lineup of the given size is short
 function getMissingDrivers(car, lineupSize = 1) {
   return Math.max(0, lineupSize - getCarLineup(car).length);
@@ -532,13 +556,11 @@ function finishChampionship(entry) {
   G.reputation += bonusRep;
   entry.repEarned += bonusRep;
 
-  // Every driver seated in the car earns LP; those beyond the series' lineup were reserves
-  const lineup = car ? getCarLineup(car) : [];
+  // The drivers who raced earn LP; reserves beyond the series' lineup earn nothing
+  const lineup = car ? getCarLineup(car).slice(0, getLineupSize(champDef)) : [];
   const classId = entry.classId || (car && car.classId);
   const lpByDriver = {};
-  lineup.forEach((d, i) => {
-    lpByDriver[d.id] = awardChampionshipLP(d, classId, finalPos, entry.carId, i < getLineupSize(champDef) ? 1 : RESERVE_LP_SHARE);
-  });
+  lineup.forEach(d => { lpByDriver[d.id] = awardChampionshipLP(d, classId, finalPos, entry.carId); });
   const lpGained = lineup[0] ? lpByDriver[lineup[0].id] : {};
 
   G.completedChampionships.push({
@@ -681,8 +703,8 @@ function assignDriver(driverId, carId, slot = 'lead') {
   }
   if (!car.coDriverIds) car.coDriverIds = [];
   const others = getCarLineup(car).filter(d => d.id !== driverId).length;
-  if (slot === 'co' && others >= MAX_LINEUP)
-    return { ok: false, msg: `${car.name} already has ${MAX_LINEUP} drivers.` };
+  if (slot === 'co' && others >= getCarSeatLimit(car))
+    return { ok: false, msg: `${car.name} already has ${getCarSeatLimit(car)} drivers.` };
 
   _detachDriver(driver);
   if (!car.driverId) {
@@ -691,7 +713,7 @@ function assignDriver(driverId, carId, slot = 'lead') {
     const prevLead = G.drivers.find(d => d.id === car.driverId);
     car.driverId = driverId;
     if (prevLead) {
-      if (getCarLineup(car).length < MAX_LINEUP) car.coDriverIds.unshift(prevLead.id);
+      if (getCarLineup(car).length < getCarSeatLimit(car)) car.coDriverIds.unshift(prevLead.id);
       else prevLead.carId = null;
     }
   } else {
@@ -1230,11 +1252,11 @@ function _champDriverAndClass(comp) {
 
 // Award License Points to a driver for one completed championship.
 // Returns { licenseId: pointsEarned } for licenses not yet held.
-function awardChampionshipLP(driver, classId, finalPos, carId, share = 1) {
+function awardChampionshipLP(driver, classId, finalPos, carId) {
   if (!driver) return {};
   const lpTable = LP_EARN_TABLE[classId] || {};
   const factor  = LICENSE_RESULT_FACTORS[Math.min(finalPos, LICENSE_RESULT_FACTORS.length) - 1];
-  const mult    = (G.licensePtMultiplier || 1.0) * (1 + getREBonuses(carId).coachBonus) * factor * share;
+  const mult    = (G.licensePtMultiplier || 1.0) * (1 + getREBonuses(carId).coachBonus) * factor;
   if (!driver.licensePoints) driver.licensePoints = {};
   if (!driver.licenses) driver.licenses = ['GT4'];
 
@@ -1497,9 +1519,9 @@ function tick(deltaMs) {
   // Passive sponsor income
   accrueSponsorIncome(deltaSec);
 
-  // Driver XP (passive growth, boosted by RE driverCoach)
+  // Driver XP (passive growth, boosted by RE driverCoach); reserves don't gain any
   G.drivers.forEach(d => {
-    if (d.carId) {
+    if (d.carId && !isReserveDriver(d)) {
       const coachBonus = getREBonuses(d.carId).coachBonus;
       d.xp += deltaSec * 0.1 * (1 + coachBonus);
     }

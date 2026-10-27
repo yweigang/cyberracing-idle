@@ -103,34 +103,23 @@ function renderNotifications() {
 
 // ─── Garage Panel ─────────────────────────────────────────────────────────────
 
-// Largest lineup any series open to this class asks for
-function _maxLineupForClass(classId) {
-  return CHAMPIONSHIPS.filter(c => c.allowedClasses.includes(classId))
-    .reduce((m, c) => Math.max(m, getLineupSize(c)), 1);
-}
-
-// Lineup size that matters for a car right now: its current series, else the largest open to it
-function _lineupSizeForCar(car) {
-  const entry = car.championshipId && G.activeChampionships.find(e => e.id === car.championshipId);
-  return entry ? getLineupSize(getChampionshipById(entry.definitionId)) : _maxLineupForClass(car.classId);
-}
-
 // Seat rows for a car card: lead, co-drivers, and empty seats with a driver picker
 function _renderLineup(car) {
   const lineup = getCarLineup(car);
-  const enduranceSize = _maxLineupForClass(car.classId);
+  const enduranceSize = getMaxLineupForClass(car.classId);
+  const raceSeats = getCarLineupSize(car);
   const license = CLASS_LICENSE_REQUIREMENT[car.classId];
   const candidates = G.drivers.filter(d => d.carId !== car.id && (!license || (d.licenses || []).includes(license)));
   // The seats the car's series need, plus one spare seat for a reserve
-  const seats = Math.min(MAX_LINEUP, Math.max(enduranceSize, lineup.length + 1));
+  const seats = lineup.length ? getCarSeatLimit(car) : enduranceSize;
   let html = '';
   for (let i = 0; i < seats; i++) {
     const d = lineup[i];
-    const role = i === 0 ? 'Lead' : 'Co-driver';
+    const role = i === 0 ? 'Lead' : i < raceSeats ? 'Co-driver' : 'Reserve';
     if (d) {
       const s = getCareerStage(d.age || 20);
       html += `
-        <div class="lineup-seat">
+        <div class="lineup-seat ${i >= raceSeats ? 'lineup-reserve' : ''}">
           <span class="lineup-role">${role}</span>
           <span class="lineup-name">${d.name}</span>
           <span class="lineup-stats">Pace ${d.pace} · Fit ${d.fitness} · <span style="color:${s.color}">${s.label}</span></span>
@@ -143,7 +132,7 @@ function _renderLineup(car) {
         return `<option value="${c.id}">${c.name} · Pace ${c.pace}${from ? ' (from ' + from.name + ')' : ''}</option>`;
       }).join('');
       html += `
-        <div class="lineup-seat lineup-empty">
+        <div class="lineup-seat lineup-empty ${i >= raceSeats ? 'lineup-reserve' : ''}">
           <span class="lineup-role">${role}</span>
           ${options
             ? `<select class="lineup-add-select" data-car="${car.id}"><option value="">+ Add driver</option>${options}</select>`
@@ -156,8 +145,11 @@ function _renderLineup(car) {
     ? (missing > 0
         ? `<div class="lineup-note warn">⚠ Endurance series want ${enduranceSize} drivers. ${missing} short: the fittest driver double-stints tired and the DNF chance rises ${Math.round(SHORT_LINEUP_DNF_PENALTY * missing * 100)}%.</div>`
         : `<div class="lineup-note">Endurance stints are shared by ${enduranceSize} drivers; sprint races use the lead driver.</div>`)
-    : (lineup.length > 1 ? `<div class="lineup-note">Sprint series race with the lead driver; co-drivers earn half LP as reserves.</div>` : '');
-  return `<div class="car-lineup">${html}${note}</div>`;
+    : '';
+  const reserveNote = lineup.length > raceSeats
+    ? `<div class="lineup-note">Reserves don't race or earn LP/XP. They step in when a race driver leaves, retires or is released.</div>`
+    : '';
+  return `<div class="car-lineup">${html}${note}${reserveNote}</div>`;
 }
 
 function renderGarage() {
@@ -287,7 +279,7 @@ function renderGarage() {
       const paceMult = calcDriverPaceMult(car);
       const rating = Math.round(calcCarRating(car));
       const dnfPct = Math.round(calcDNFChance(car) * 100);
-      const endSize = _lineupSizeForCar(car);
+      const endSize = getCarLineupSize(car);
       const endRating = endSize > 1 ? Math.round(calcCarRating(car, 'endurance', false, endSize)) : null;
 
       carsHtml += `
@@ -300,7 +292,7 @@ function renderGarage() {
             <div class="car-stats-right">
               <div class="car-rating">★ ${rating}</div>
               <div class="car-mult">car ${baseRating} · driver ×${paceMult.toFixed(2)} · DNF ${dnfPct}%</div>
-              ${endRating !== null ? `<div class="car-mult">endurance ★ ${endRating} with ${getCarLineup(car).length}/${endSize} drivers · DNF ${Math.round(calcDNFChance(car, 'endurance', endSize) * 100)}%</div>` : ''}
+              ${endRating !== null ? `<div class="car-mult">endurance ★ ${endRating} with ${Math.min(getCarLineup(car).length, endSize)}/${endSize} drivers · DNF ${Math.round(calcDNFChance(car, 'endurance', endSize) * 100)}%</div>` : ''}
               ${G.cars.length > 1 && !car.championshipId
                 ? `<button class="btn btn-danger sell-car-btn" data-car="${car.id}">${_confirmSellCarId === car.id ? 'Confirm sell' : 'Sell'} $${formatNumber(getCarSellValue(car))}</button>`
                 : ''}
@@ -733,8 +725,10 @@ function renderDrivers() {
               ${G.cars.map(c => {
                 const seated = getCarLineup(c);
                 const here = driver.carId === c.id;
-                const role = here ? (c.driverId === driver.id ? ' (lead)' : ' (co-driver)') : ` (${seated.length}/${MAX_LINEUP})`;
-                return `<option value="${c.id}" ${here ? 'selected' : ''} ${!here && seated.length >= MAX_LINEUP ? 'disabled' : ''}>${c.name}${role}</option>`;
+                const role = here
+                  ? (c.driverId === driver.id ? ' (lead)' : isReserveDriver(driver) ? ' (reserve)' : ' (co-driver)')
+                  : ` (${seated.length}/${getCarSeatLimit(c)})`;
+                return `<option value="${c.id}" ${here ? 'selected' : ''} ${!here && seated.length >= getCarSeatLimit(c) ? 'disabled' : ''}>${c.name}${role}</option>`;
               }).join('')}
             </select>
           </div>

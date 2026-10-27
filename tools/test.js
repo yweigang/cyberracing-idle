@@ -321,12 +321,17 @@ function lineupSetup() {
   return { g, ids, car: g.run('G.cars[0].id') };
 }
 
-test('Drivers fill lead and co-driver seats, up to three per car', () => {
+test('Drivers fill lead, co-driver and reserve seats, up to four per car', () => {
   const { g, ids, car } = lineupSetup();
   assert(g.run(`assignDriver('${ids[0]}', '${car}', 'co').ok`), 'first driver takes the empty lead seat');
   g.run(`assignDriver('${ids[1]}', '${car}', 'co'); assignDriver('${ids[2]}', '${car}', 'co');`);
   assert(g.run('G.cars[0].driverId') === ids[0] && g.run('G.cars[0].coDriverIds.join()') === ids[1] + ',' + ids[2], 'lead + 2 co-drivers');
-  assert(!g.run(`assignDriver('${ids[3]}', '${car}', 'co').ok`), 'a fourth driver does not fit');
+  assert(g.run(`assignDriver('${ids[3]}', '${car}', 'co').ok`), 'a fourth driver joins as reserve');
+  assert(g.run(`(() => { const c = G.cars[0]; c.classId = 'GT4'; const n = getCarSeatLimit(c); c.classId = 'GT3'; return n; })()`) === 2, 'sprint-only GT4 seats lead + one reserve');
+  assert(g.run(`isReserveDriver(G.drivers.find(d => d.id === '${ids[3]}'))`), 'fourth seat is a reserve');
+  g.run(`G.drivers.push(Object.assign({}, G.drivers[0], { id: 'driver_x', carId: null }))`);
+  assert(!g.run(`assignDriver('driver_x', '${car}', 'co').ok`), 'a fifth driver does not fit');
+  g.run(`unassignDriver('${ids[3]}')`);
   g.run(`assignDriver('${ids[2]}', '${car}', 'lead')`);
   assert(g.run('G.cars[0].driverId') === ids[2] && g.run('getCarLineup(G.cars[0]).length') === 3, 'co-driver promoted, old lead stays');
   g.run(`unassignDriver('${ids[2]}')`);
@@ -346,17 +351,20 @@ test('A short endurance lineup races slower and retires more often', () => {
   assert(Math.abs(full[0] - equalSolo) < 1e-9, 'three equal drivers rate like one rested driver');
 });
 
-test('Every driver in the lineup earns LP and XP; reserves earn half LP', () => {
+test('Race drivers earn LP and XP; reserves earn nothing', () => {
   const { g, ids, car } = lineupSetup();
   g.run(`G.cars[0].classId = 'GT4'; G.drivers.forEach(d => { d.licenses = ['GT4']; d.licensePoints = {}; });
     UPGRADE_ORDER.forEach(u => G.cars[0].upgrades[u] = 14);`);
   g.run(`assignDriver('${ids[0]}', '${car}'); assignDriver('${ids[1]}', '${car}', 'co');`);
   finishChamp(g, 'gt4_regional', car);
-  const lead = driver(g, ids[0]).licensePoints.GT3, reserve = driver(g, ids[1]).licensePoints.GT3;
-  assert(lead > 0 && reserve === Math.round(lead / 2), `sprint reserve earns half (${reserve} of ${lead})`);
-  const xpBefore = driver(g, ids[1]).xp;
+  assert(driver(g, ids[0]).licensePoints.GT3 > 0, 'lead earns LP');
+  assert(!driver(g, ids[1]).licensePoints.GT3, 'sprint reserve earns no LP');
+  assert(driver(g, ids[1]).xp === 0 && g.run(`isReserveDriver(G.drivers.find(d => d.id === '${ids[1]}'))`), 'reserve gains no XP');
+  const leadXp = driver(g, ids[0]).xp;
   g.run('endSeason()');
-  assert(driver(g, ids[1]).xp >= xpBefore + 100, 'co-driver gets championship XP');
+  assert(driver(g, ids[0]).xp >= leadXp + 100 && driver(g, ids[1]).xp === 0, 'only the race driver gets championship XP');
+  g.run(`unassignDriver('${ids[0]}')`);
+  assert(g.run('G.cars[0].driverId') === ids[1], 'reserve steps in when the lead leaves');
 });
 
 test('Saves from before lineups load with empty co-driver seats', () => {
