@@ -75,6 +75,21 @@ select { font-family: inherit; }
   border-right: 1px solid var(--border);
 }
 #logo span { color: var(--magenta); }
+.version-btn {
+  margin-left: 8px;
+  padding: 1px 6px;
+  font: inherit;
+  font-size: 10px;
+  font-weight: 400;
+  letter-spacing: 0.5px;
+  color: var(--text-2);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  cursor: pointer;
+  text-transform: none;
+}
+.version-btn:hover { color: var(--cyan); border-color: var(--cyan); }
 
 #hud {
   display: flex;
@@ -1123,6 +1138,24 @@ select { font-family: inherit; }
 .dialog-warn { color: var(--amber); }
 .sell-blocked { font-size: 10px; color: var(--text-3); margin-top: 3px; max-width: 180px; text-align: right; }
 .dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
+
+/* ─── Update banner ───────────────────────────────────────────────────────── */
+.update-banner {
+  position: fixed; left: 50%; bottom: 16px; transform: translateX(-50%);
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: center;
+  max-width: calc(100% - 32px);
+  background: var(--bg-2); border: 1px solid var(--cyan); border-radius: var(--radius-lg);
+  padding: 10px 14px; font-size: 13px; color: var(--text-1);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.5); z-index: 900;
+}
+
+/* ─── Changelog dialog ────────────────────────────────────────────────────── */
+.dialog-wide { max-width: 620px; }
+.changelog { max-height: 60vh; overflow-y: auto; padding-right: 6px; display: flex; flex-direction: column; gap: 16px; }
+.changelog-head { display: flex; align-items: baseline; gap: 8px; margin-bottom: 6px; flex-wrap: wrap; }
+.changelog-version { color: var(--cyan); font-weight: 700; }
+.changelog-title { color: var(--text-1); font-weight: 600; }
+.changelog-date { color: var(--text-2); font-size: 11px; margin-left: auto; }
 
 /* ─── Player feedback round: sponsors, garage, drivers ──────────────────────── */
 .cls-series { font-size: 11px; color: var(--text-2); margin: 4px 0 6px; line-height: 1.4; }

@@ -599,6 +599,13 @@ test('Every class makes money mid-field: first entry at P5, renewal at P8', () =
   assert(losers.length === 0, 'loss-making: ' + losers.join(', '));
 });
 
+test('The newest changelog entry matches the game version', () => {
+  const { g } = setup();
+  const src = require('fs').readFileSync(require('path').join(__dirname, '..', 'js', 'changelog.js'), 'utf8');
+  const first = src.match(/version: '([\d.]+)'/)[1];
+  assert(first === g.run('GAME_VERSION'), `changelog starts at ${first}, game is ${g.run('GAME_VERSION')}`);
+});
+
 let failed = 0;
 for (const t of tests) {
   try { t.fn(); console.log('PASS', t.name); }

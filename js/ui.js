@@ -45,24 +45,25 @@ function renderActivePanel() {
 // ─── Confirmation Dialog ──────────────────────────────────────────────────────
 
 // Modal confirm dialog. body is trusted HTML built by the caller. Esc or a click
-// outside cancels; Enter confirms.
-function showConfirmDialog({ title, body, confirmLabel = 'Confirm', danger = false, onConfirm }) {
+// outside cancels; Enter confirms. Without onConfirm it is an info dialog with one
+// Close button.
+function showConfirmDialog({ title, body, confirmLabel = 'Confirm', danger = false, onConfirm, wide = false }) {
   closeConfirmDialog();
   const overlay = document.createElement('div');
   overlay.className = 'dialog-overlay';
   overlay.id = 'confirm-dialog';
   overlay.innerHTML = `
-    <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="dialog-title">
+    <div class="dialog ${wide ? 'dialog-wide' : ''}" role="dialog" aria-modal="true" aria-labelledby="dialog-title">
       <div class="dialog-title" id="dialog-title">${title}</div>
       <div class="dialog-body">${body}</div>
       <div class="dialog-actions">
-        <button class="btn" id="dialog-cancel">Cancel</button>
-        <button class="btn ${danger ? 'btn-danger' : ''}" id="dialog-confirm">${confirmLabel}</button>
+        <button class="btn" id="dialog-cancel">${onConfirm ? 'Cancel' : 'Close'}</button>
+        ${onConfirm ? `<button class="btn ${danger ? 'btn-danger' : ''}" id="dialog-confirm">${confirmLabel}</button>` : ''}
       </div>
     </div>`;
   document.body.appendChild(overlay);
-  const confirm = () => { closeConfirmDialog(); onConfirm(); };
-  overlay.querySelector('#dialog-confirm').addEventListener('click', confirm);
+  const confirm = () => { closeConfirmDialog(); if (onConfirm) onConfirm(); };
+  if (onConfirm) overlay.querySelector('#dialog-confirm').addEventListener('click', confirm);
   overlay.querySelector('#dialog-cancel').addEventListener('click', closeConfirmDialog);
   overlay.addEventListener('click', e => { if (e.target === overlay) closeConfirmDialog(); });
   overlay._onKey = e => {
@@ -71,6 +72,81 @@ function showConfirmDialog({ title, body, confirmLabel = 'Confirm', danger = fal
   };
   document.addEventListener('keydown', overlay._onKey);
   overlay.querySelector('#dialog-cancel').focus();
+}
+
+// ─── Changelog ────────────────────────────────────────────────────────────────
+
+// Compares "0.10.0"-style versions: negative when a is older than b
+function _compareVersions(a, b) {
+  const pa = a.split('.').map(Number), pb = b.split('.').map(Number);
+  for (let i = 0; i < 3; i++) if ((pa[i] || 0) !== (pb[i] || 0)) return (pa[i] || 0) - (pb[i] || 0);
+  return 0;
+}
+
+// Shows release notes: only the releases newer than sinceVersion, else the whole history
+function showChangelog(sinceVersion = null) {
+  const entries = sinceVersion
+    ? CHANGELOG.filter(e => _compareVersions(e.version, sinceVersion) > 0)
+    : CHANGELOG;
+  const body = entries.map(e => `
+    <div class="changelog-entry">
+      <div class="changelog-head"><span class="changelog-version">v${e.version}</span>
+        <span class="changelog-title">${e.title}</span><span class="changelog-date">${e.date}</span></div>
+      <ul class="dialog-list">${e.changes.map(c => `<li>${c}</li>`).join('')}</ul>
+    </div>`).join('');
+  showConfirmDialog({ title: sinceVersion ? "What's new" : 'Changelog', body: `<div class="changelog">${body}</div>`, wide: true });
+  G.lastSeenVersion = GAME_VERSION;
+}
+
+// ─── Update check ─────────────────────────────────────────────────────────────
+
+const UPDATE_CHECK_MS = 5 * 60 * 1000;
+let _dismissedBuild = null;
+
+// Build stamp of the running page, from the ?v= tag on its script
+function _currentBuild() {
+  const script = document.querySelector('script[src*="js/game.js"]');
+  const m = script && script.getAttribute('src').match(/[?&]v=(\w+)/);
+  return m ? m[1] : null;
+}
+
+// Asks the server for the latest build; offers a reload when it is newer than this page
+async function checkForUpdate() {
+  const current = _currentBuild();
+  if (!current) return;
+  try {
+    const res = await fetch(`version.json?t=${Date.now()}`, { cache: 'no-store' });
+    if (!res.ok) return;
+    const { build } = await res.json();
+    if (build && build > current && build !== _dismissedBuild) _showUpdateBanner(build);
+  } catch (e) { /* offline: try again later */ }
+}
+
+function _showUpdateBanner(build) {
+  if (document.getElementById('update-banner')) return;
+  const bar = document.createElement('div');
+  bar.id = 'update-banner';
+  bar.className = 'update-banner';
+  bar.innerHTML = `<span>A new version of Cyberracing Idle is available. Your progress is saved first.</span>
+    <button class="btn" id="update-reload-btn">Reload now</button>
+    <button class="btn" id="update-later-btn">Later</button>`;
+  document.body.appendChild(bar);
+  bar.querySelector('#update-reload-btn').addEventListener('click', () => {
+    saveGame();
+    // A fresh URL skips any cached copy of the old page
+    location.replace(location.pathname + '?v=' + build);
+  });
+  bar.querySelector('#update-later-btn').addEventListener('click', () => {
+    _dismissedBuild = build;
+    bar.remove();
+  });
+}
+
+// After an update, show the notes the player hasn't seen yet once
+function _showUnseenChangelog() {
+  if (G.lastSeenVersion && _compareVersions(G.lastSeenVersion, GAME_VERSION) >= 0) return;
+  // Saves from before the changelog only see the latest release
+  showChangelog(G.lastSeenVersion || CHANGELOG[1].version);
 }
 
 function closeConfirmDialog() {
@@ -1929,10 +2005,20 @@ function initUI() {
   const renameBtn = document.getElementById('hud-rename-btn');
   if (renameBtn) renameBtn.addEventListener('click', startTeamRename);
 
+  const versionBtn = document.getElementById('version-btn');
+  versionBtn.textContent = 'v' + GAME_VERSION;
+  versionBtn.addEventListener('click', () => showChangelog());
+
   // Initial render
   switchTab('garage');
   updateCurrencyBar();
+  _showUnseenChangelog();
 
   // UI refresh loop — HUD + targeted in-place updates only, no DOM reconstruction
   setInterval(fastRefresh, 100);
+
+  // Offer a reload when a new version is published
+  setInterval(checkForUpdate, UPDATE_CHECK_MS);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) checkForUpdate(); });
+  checkForUpdate();
 }

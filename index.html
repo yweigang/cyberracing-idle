@@ -5,14 +5,14 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Cyberracing Idle</title>
   <link rel="icon" type="image/png" href="assets/logo.png" />
-  <link rel="stylesheet" href="css/style.css?v=202610271708" />
+  <link rel="stylesheet" href="css/style.css?v=202610271713" />
 </head>
 <body>
 <div id="app">
 
   <!-- ── Header / HUD ──────────────────────────────────────────────────── -->
   <header id="header">
-    <div id="logo">CYBER<span>RACING</span> IDLE</div>
+    <div id="logo">CYBER<span>RACING</span> IDLE<button id="version-btn" class="version-btn" title="What's new">v0.0.0</button></div>
     <div id="hud">
       <div class="hud-stat hud-team">
         <div class="hud-label">Team</div>
@@ -96,9 +96,10 @@
 </div>
 
 <!-- Scripts: data → game → ui -->
-<script src="js/data.js?v=202610271708"></script>
-<script src="js/game.js?v=202610271708"></script>
-<script src="js/ui.js?v=202610271708"></script>
+<script src="js/data.js?v=202610271713"></script>
+<script src="js/changelog.js?v=202610271713"></script>
+<script src="js/game.js?v=202610271713"></script>
+<script src="js/ui.js?v=202610271713"></script>
 <script>
   // Boot
   initGame();

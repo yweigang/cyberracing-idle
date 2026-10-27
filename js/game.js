@@ -14,6 +14,7 @@ function createDefaultState() {
     version: '0.1.0',
     lastSave: Date.now(),
     teamName: DEFAULT_TEAM_NAME,
+    lastSeenVersion: null,     // newest release whose notes the player has seen
     money: 5000,
     reputation: 0,
     prestigePoints: 0,
@@ -2098,6 +2099,7 @@ function _setupNewGame() {
   const res = scoutDriver('C');
   if (res.ok) assignDriver(res.driver.id, G.cars[0].id);
   G.nextFreeScoutAt = 0;
+  G.lastSeenVersion = GAME_VERSION;
 }
 
 // ─── Formatting Helpers ───────────────────────────────────────────────────────
