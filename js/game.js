@@ -43,8 +43,12 @@ function createDefaultState() {
       totalResets: 0,
       prestigeCount: 0,        // increments each time doPrestige() is called
       lastPrestigeSeason: 0,   // G.season value at last prestige (for PP calculation)
+      lastPrestigeAt: 0,       // timestamp of the last reset (results after it earn PP)
+      repAtLastPrestige: 0,
       permanentBonuses: {
-        incomeMultiplier: 1.0,
+        incomeMultiplier: 1.0,   // race rating multiplier (Wind Tunnel Program)
+        scoutDiscount: 0,
+        devTokens: 0,
         sponsorBonus: 0,
         headStartLevels: 0,
       },
@@ -493,11 +497,14 @@ function generateDriverStats(tier, randFn) {
 
 // ─── Driver System ────────────────────────────────────────────────────────────
 
+let _allowLockedScout = false;
+
 function scoutDriver(tier) {
   const tierDef = DRIVER_TIERS[tier];
   if (!tierDef) return { ok: false, msg: 'Unknown tier.' };
-  if (tierDef.locked) return { ok: false, msg: 'Special acquisition only.' };
-  const effectiveScoutCost = Math.floor(tierDef.scoutCost * getTPBonuses().scoutCostMult);
+  if (tierDef.locked && !_allowLockedScout) return { ok: false, msg: 'Special acquisition only.' };
+  const discount = G.prestige.permanentBonuses.scoutDiscount || 0;
+  const effectiveScoutCost = Math.floor(tierDef.scoutCost * getTPBonuses().scoutCostMult * (1 - discount));
   if (G.money < effectiveScoutCost) return { ok: false, msg: 'Not enough money.' };
 
   G.money -= effectiveScoutCost;
@@ -996,6 +1003,11 @@ function _migrateDriverAge() {
 // Ensure season/prestige tracking fields exist on old saves
 function _migratePrestige() {
   if (G.seasonEndCount === undefined) G.seasonEndCount = 0;
+  const pb = G.prestige.permanentBonuses;
+  if (pb.scoutDiscount === undefined) pb.scoutDiscount = 0;
+  if (pb.devTokens === undefined) pb.devTokens = 0;
+  if (G.prestige.lastPrestigeAt === undefined) G.prestige.lastPrestigeAt = 0;
+  if (G.prestige.repAtLastPrestige === undefined) G.prestige.repAtLastPrestige = 0;
   if (!G.prestige) G.prestige = createDefaultState().prestige;
   if (G.prestige.prestigeCount   === undefined) G.prestige.prestigeCount   = 0;
   if (G.prestige.lastPrestigeSeason === undefined) G.prestige.lastPrestigeSeason = 0;
@@ -1195,7 +1207,15 @@ function endSeason() {
   });
   G.activeChampionships = [];
 
-  // 7. Increment season
+  // 7. Legend contracts end with the season
+  G.drivers.filter(d => d.contractUntilSeason !== undefined && d.contractUntilSeason <= endedSeason).forEach(d => {
+    const car = G.cars.find(c => c.id === d.carId);
+    if (car) car.driverId = null;
+    G.drivers.splice(G.drivers.indexOf(d), 1);
+    addNotification(`${d.name}'s legend contract has ended.`, 'info');
+  });
+
+  // 8. Increment season
   G.season++;
   G.seasonEndCount = (G.seasonEndCount || 0) + 1;
 
@@ -1208,25 +1228,61 @@ function endSeason() {
 
 // ─── Prestige ─────────────────────────────────────────────────────────────────
 
-// Requires at least one season to have been ended since the last prestige.
-function canPrestige() {
-  return (G.seasonEndCount || 0) > (G.prestige.prestigeCount || 0);
+// Results since the last reset, each worth PP by series and finishing position
+function calcPrestigePoints() {
+  const since = G.prestige.lastPrestigeAt || 0;
+  let pp = 0;
+  G.completedChampionships.filter(c => (c.completedAt || 0) > since && c.finalPosition).forEach(c => {
+    const titlePP = PRESTIGE_TITLE_PP[c.definitionId] || 0;
+    if (c.finalPosition === 1) pp += titlePP;
+    else if (c.finalPosition <= 3) pp += titlePP * PRESTIGE_PODIUM_SHARE;
+  });
+  const repGained = Math.max(0, G.reputation - (G.prestige.repAtLastPrestige || 0));
+  return Math.floor(pp + repGained / PRESTIGE_REP_PER_PP);
 }
 
-function calcPrestigePoints() {
-  // Count completions across all seasons since last prestige (not including current season)
-  const lastP = G.prestige.lastPrestigeSeason || 0;
-  const repPP  = Math.floor(G.reputation / 1000);
-  const champPP = G.completedChampionships.filter(c => c.season > lastP && c.season < G.season).length * 10;
-  return repPP + champPP;
+function canPrestige() {
+  return calcPrestigePoints() >= PRESTIGE_MIN_GAIN;
+}
+
+function getPrestigeItemCount(itemId) {
+  return G.prestige.purchased.filter(p => p === itemId).length;
+}
+
+function buyPrestigeItem(itemId) {
+  const item = PRESTIGE_ITEMS.find(i => i.id === itemId);
+  if (!item) return { ok: false, msg: 'Unknown item.' };
+  if (item.maxPurchases && getPrestigeItemCount(itemId) >= item.maxPurchases) return { ok: false, msg: 'Already maxed.' };
+  if (G.prestigePoints < item.cost) return { ok: false, msg: 'Not enough PP.' };
+
+  const bonuses = G.prestige.permanentBonuses;
+  if (itemId === 'legend_contract') {
+    _allowLockedScout = true;
+    let res;
+    try { res = scoutDriver('L'); } finally { _allowLockedScout = false; }
+    if (!res.ok) return res;
+    res.driver.contractUntilSeason = G.season;
+    addNotification(`Legend ${res.driver.name} signed until the end of season ${G.season}.`, 'prestige');
+  }
+  G.prestigePoints -= item.cost;
+  G.prestige.purchased.push(itemId);
+  if (itemId === 'head_start')      bonuses.headStartLevels = (bonuses.headStartLevels || 0) + 1;
+  if (itemId === 'wind_tunnel')     bonuses.incomeMultiplier = (bonuses.incomeMultiplier || 1) + 0.03;
+  if (itemId === 'factory_backing') bonuses.sponsorBonus = (bonuses.sponsorBonus || 0) + 0.25;
+  if (itemId === 'talent_academy')  bonuses.scoutDiscount = 0.5;
+  if (itemId === 'dev_token')       bonuses.devTokens = (bonuses.devTokens || 0) + 1;
+  addNotification(`Purchased: ${item.name}`, 'prestige');
+  return { ok: true };
 }
 
 function doPrestige() {
-  if (!canPrestige()) return { ok: false, msg: 'End at least one season first.' };
+  if (!canPrestige()) return { ok: false, msg: `Earn at least ${PRESTIGE_MIN_GAIN} PP first.` };
 
   const ppGain = calcPrestigePoints();
   G.prestigePoints += ppGain;
-  G.prestige.lastPrestigeSeason = G.season - 1; // last ended season
+  G.prestige.lastPrestigeSeason = G.season;
+  G.prestige.lastPrestigeAt = Date.now();
+  G.prestige.repAtLastPrestige = G.reputation;
   const prevPrestigeCount = G.prestige.prestigeCount || 0;
   G.prestige.prestigeCount = prevPrestigeCount + 1;
   G.prestige.totalResets++;
@@ -1236,13 +1292,18 @@ function doPrestige() {
   G.money = 5000;
 
   const headStart = G.prestige.permanentBonuses.headStartLevels || 0;
+  const kept = UPGRADE_ORDER.slice(0, G.prestige.permanentBonuses.devTokens || 0);
 
-  // Reset car upgrades (keep 2 reliability levels, add head-start levels)
+  // Reset car upgrades: head-start levels, 2 reliability levels kept, token lines kept
   G.cars.forEach(car => {
-    const relLvl = car.upgrades.reliability;
-    car.upgrades = { engine: headStart, aero: headStart, tyres: headStart, brakes: headStart, reliability: Math.min(2 + headStart, 20) };
-    car.upgrades.reliability = Math.max(car.upgrades.reliability, Math.min(relLvl, 2) + headStart);
+    const old = car.upgrades;
+    const fresh = {};
+    UPGRADE_ORDER.forEach(id => { fresh[id] = Math.min(UPGRADES[id].maxLevel, headStart); });
+    fresh.reliability = Math.min(20, Math.min(old.reliability, 2) + headStart);
+    kept.forEach(id => { fresh[id] = Math.max(fresh[id], old[id]); });
+    car.upgrades = fresh;
     car.championshipId = null;
+    car.autoRenew = null;
   });
 
   // Clear any lingering active championships (safety net)
@@ -1251,10 +1312,6 @@ function doPrestige() {
     if (car) car.championshipId = null;
   });
   G.activeChampionships = [];
-
-  // Unassign drivers (XP and age persist)
-  G.drivers.forEach(d => { d.carId = null; });
-  G.cars.forEach(c => { c.driverId = null; });
 
   addNotification(`Prestige! +${ppGain} PP. Money and upgrades reset.`, 'prestige');
   if (singleSeaterJustUnlocked) {

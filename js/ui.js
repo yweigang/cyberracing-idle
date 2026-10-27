@@ -13,6 +13,7 @@ let _hiringRECarId = null;     // carId being hired for, or null
 let _reCandidates = [];
 let _confirmingReset = false;
 let _confirmSellCarId = null;
+let _confirmingPrestige = false;
 
 // ─── Tab Navigation ───────────────────────────────────────────────────────────
 
@@ -1239,14 +1240,38 @@ function renderPrestige() {
     html += `</div>`;
   }
 
-  // ── Prestige section — disabled / WIP
+  // ── Prestige section
+  const ppGain = calcPrestigePoints();
+  const canP = canPrestige();
   html += `
     <div class="section-header">PRESTIGE RESET</div>
-    <div class="wip-screen">
-      <div class="wip-icon">🚧</div>
-      <div class="wip-title">Coming Soon</div>
-      <div class="wip-desc">Prestige resets are not yet available. Focus on building up your season results for now.</div>
-    </div>`;
+    <div class="prestige-info">
+      <div class="prestige-pp">You have <span class="pp-value">${G.prestigePoints} PP</span></div>
+      <div class="prestige-gain">Resetting now grants <span class="pp-gain">+${ppGain} PP</span>
+        <span class="prestige-warning">(titles and podiums since the last reset, plus 1 PP per ${formatNumber(PRESTIGE_REP_PER_PP)} REP gained)</span></div>
+      <div class="prestige-warning">Resets money to $5,000 and all car upgrades. Cars, drivers, licenses, REP, sponsors and PP stay.
+        ${(G.prestige.prestigeCount || 0) === 0 ? '<br>Your first reset unlocks the <b>Single-Seater Pathway</b> (F4 → F1).' : ''}</div>
+      <button class="btn btn-prestige ${canP ? '' : 'disabled'}" id="prestige-btn" ${canP ? '' : 'disabled'}>
+        ${!canP ? `Earn ${PRESTIGE_MIN_GAIN} PP to reset · ${ppGain} so far` : _confirmingPrestige ? `Confirm reset — +${ppGain} PP` : `Prestige — +${ppGain} PP`}
+      </button>
+    </div>
+    <div class="section-header">PRESTIGE SHOP</div>
+    <div class="prestige-shop-grid">`;
+  PRESTIGE_ITEMS.forEach(item => {
+    const owned = getPrestigeItemCount(item.id);
+    const maxed = item.maxPurchases && owned >= item.maxPurchases;
+    const canBuy = !maxed && G.prestigePoints >= item.cost;
+    html += `
+      <div class="prestige-item ${maxed ? 'maxed' : ''}">
+        <div class="pi-name">${item.name}</div>
+        <div class="pi-desc">${item.description}</div>
+        ${item.maxPurchases ? `<div class="pi-count">${owned}/${item.maxPurchases}</div>` : ''}
+        <button class="btn prestige-buy-btn ${canBuy ? '' : 'disabled'}" data-item="${item.id}" ${canBuy ? '' : 'disabled'}>
+          ${maxed ? 'Maxed' : item.cost + ' PP'}
+        </button>
+      </div>`;
+  });
+  html += '</div>';
 
   // ── Hard Reset section
   html += `<div class="section-header">DANGER ZONE</div>`;
@@ -1271,6 +1296,26 @@ function renderPrestige() {
   }
 
   container.innerHTML = html;
+
+  // Events — prestige (two clicks)
+  const prestigeBtn = container.querySelector('#prestige-btn:not([disabled])');
+  if (prestigeBtn) {
+    prestigeBtn.addEventListener('click', () => {
+      if (!_confirmingPrestige) { _confirmingPrestige = true; renderPrestige(); return; }
+      _confirmingPrestige = false;
+      const result = doPrestige();
+      if (!result.ok) addNotification(result.msg, 'error');
+      renderPrestige();
+    });
+  }
+
+  container.querySelectorAll('.prestige-buy-btn:not([disabled])').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const result = buyPrestigeItem(btn.dataset.item);
+      if (!result.ok) addNotification(result.msg, 'error');
+      renderPrestige();
+    });
+  });
 
   // Events — hard reset
   const openResetBtn = container.querySelector('#open-hard-reset-btn');

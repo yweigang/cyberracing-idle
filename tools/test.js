@@ -214,6 +214,38 @@ test('Selling a car refunds part of its value and frees the slot', () => {
   assert(g.run(`sellCar(G.cars[0].id).ok`) === false, 'cannot sell the last car');
 });
 
+test('Prestige pays PP for results and resets upgrades but keeps drivers', () => {
+  const { g, a, car } = setup();
+  g.run(`assignDriver('${a}', '${car}'); UPGRADE_ORDER.forEach(u => G.cars[0].upgrades[u] = 12);`);
+  assert(!g.run('canPrestige()'), 'nothing earned yet');
+  for (let i = 0; i < 10; i++) {
+    if (!g.run("fitsInSeason(getChampionshipById('gt4_regional'))")) g.run('endSeason()');
+    finishChamp(g, 'gt4_regional', car);
+  }
+  const pp = g.run('calcPrestigePoints()');
+  assert(pp >= 20, 'ten GT4 titles should be worth at least 20 PP, got ' + pp);
+  const res = g.run('doPrestige()');
+  assert(res.ok && g.run('G.prestigePoints') === pp, 'PP granted');
+  assert(g.run('G.cars[0].upgrades.engine') === 0 && g.run('G.cars[0].upgrades.reliability') === 2, 'upgrades reset, 2 reliability kept');
+  assert(g.run('G.cars[0].driverId') === a, 'driver stays assigned');
+  assert(g.run('calcPrestigePoints()') === 0 && g.run('isSingleSeaterUnlocked()'), 'PP counter restarts; single-seaters unlocked');
+});
+
+test('Prestige shop items apply their effects', () => {
+  const { g } = setup();
+  g.run('G.prestigePoints = 10000');
+  const before = g.run(`calcCarRating(G.cars[0])`);
+  ['head_start', 'wind_tunnel', 'dev_token', 'talent_academy'].forEach(id => assert(g.run(`buyPrestigeItem('${id}').ok`), id));
+  assert(g.run(`calcCarRating(G.cars[0])`) > before, 'wind tunnel raises rating');
+  assert(g.run(`(() => { const m = G.money; scoutDriver('B'); return m - G.money; })()`) === 5000, 'scouting is half price');
+  g.run(`G.cars[0].upgrades.engine = 9; G.cars[0].upgrades.aero = 7; G.prestige.lastPrestigeAt = 0; G.reputation = 50000; doPrestige();`);
+  assert(g.run('G.cars[0].upgrades.engine') === 9, 'dev token keeps engine');
+  assert(g.run('G.cars[0].upgrades.aero') === 1, 'head start gives aero 1');
+  assert(g.run(`buyPrestigeItem('legend_contract').ok`) && g.run(`G.drivers.some(d => d.tier === 'L')`), 'legend signed');
+  g.run('endSeason()');
+  assert(!g.run(`G.drivers.some(d => d.tier === 'L')`), 'legend leaves at season end');
+});
+
 let failed = 0;
 for (const t of tests) {
   try { t.fn(); console.log('PASS', t.name); }

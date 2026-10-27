@@ -535,40 +535,53 @@ const PRESTIGE_ITEMS = [
     id: 'head_start',
     name: 'Season Head-Start',
     cost: 50,
-    description: 'Start next season with 3 upgrade levels on all car parts.',
-    repeatable: true,
+    description: 'Cars restart each reset with +1 level on every part (per purchase).',
     maxPurchases: 5,
+  },
+  {
+    id: 'wind_tunnel',
+    name: 'Wind Tunnel Program',
+    cost: 75,
+    description: '+3% race rating for every car, permanently.',
+    maxPurchases: 10,
   },
   {
     id: 'factory_backing',
     name: 'Factory Backing',
     cost: 100,
     description: 'Sponsor income +25% permanently.',
-    repeatable: false,
+    maxPurchases: 1,
   },
   {
     id: 'talent_academy',
     name: 'Talent Academy',
     cost: 150,
-    description: 'Unlock one exclusive A/S-tier driver each season.',
-    repeatable: false,
+    description: 'Driver scouting costs 50% less, permanently.',
+    maxPurchases: 1,
   },
   {
     id: 'dev_token',
     name: 'Development Token',
     cost: 200,
-    description: 'One upgrade of your choice does not reset on Season Reset.',
-    repeatable: true,
+    description: 'Each token keeps one upgrade line through resets (Engine, then Aero, Tyres, Brakes, Reliability).',
     maxPurchases: 5,
   },
   {
     id: 'legend_contract',
     name: 'Legend Contract',
     cost: 500,
-    description: 'Recruit a Legendary-tier driver for 1 season.',
-    repeatable: true,
+    description: 'Sign a Legendary driver for the rest of this season.',
   },
 ];
+
+// PP for a title in each series; P2/P3 earn PRESTIGE_PODIUM_SHARE of it
+const PRESTIGE_TITLE_PP = {
+  gt4_regional: 2, gt_world_challenge: 4, imsa_weathertech: 8, elms: 8, fia_wec: 15,
+  formula_regional: 3, formula_3_championship: 6, formula_2_championship: 10, f1_world_championship: 25,
+};
+const PRESTIGE_PODIUM_SHARE = 0.4;
+const PRESTIGE_REP_PER_PP = 1000;   // REP gained since the last reset per PP
+const PRESTIGE_MIN_GAIN = 20;       // smallest PP gain that allows a reset
 
 // ─── Garage Upgrades ──────────────────────────────────────────────────────────
 
