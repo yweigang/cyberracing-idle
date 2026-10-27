@@ -358,9 +358,40 @@ function _confirmSellCar(carId) {
 function _classSeriesText(cls) {
   const series = CHAMPIONSHIPS.filter(c => c.allowedClasses.includes(cls.id));
   if (!series.length) return '';
-  return 'Races: ' + series.map(c => G.reputation >= (c.repRequired || 0)
-    ? c.shortName
-    : `<span class="cls-series-locked">${c.shortName} (${formatNumber(c.repRequired)} REP)</span>`).join(' · ');
+  return 'Races: ' + series.map(c => {
+    const fees = `$${formatNumber(getClassEntryFee(c, cls.id))} entry, then $${formatNumber(getRenewalFee(c, cls.id))}/season`;
+    return G.reputation >= (c.repRequired || 0)
+      ? `<span title="${fees}">${c.shortName} $${formatNumber(getClassEntryFee(c, cls.id))}</span>`
+      : `<span class="cls-series-locked" title="${fees}">${c.shortName} (${formatNumber(c.repRequired)} REP)</span>`;
+  }).join(' · ');
+}
+
+// Cheapest first-entry fee among the series a new car of this class can race now
+function _cheapestClassEntry(cls) {
+  const open = CHAMPIONSHIPS.filter(c => c.allowedClasses.includes(cls.id) && G.reputation >= (c.repRequired || 0));
+  if (!open.length) return null;
+  return open.map(c => ({ champ: c, fee: getClassEntryFee(c, cls.id) })).sort((a, b) => a.fee - b.fee)[0];
+}
+
+// Buys a car, asking first when the money left would not pay any entry fee for it
+function _buyCarChecked(classId) {
+  const cls = getCarClassById(classId);
+  const entry = _cheapestClassEntry(cls);
+  const left = G.money - cls.baseCost;
+  const buy = () => {
+    const result = buyCar(classId);
+    if (!result.ok) addNotification(result.msg, 'error');
+    renderGarage();
+  };
+  if (!entry || left >= entry.fee) return buy();
+  showConfirmDialog({
+    title: `Buy a ${cls.name}?`,
+    body: `After buying it you'd have <b>$${formatNumber(left)}</b>. The cheapest series for it, ${entry.champ.name},
+      costs <b>$${formatNumber(entry.fee)}</b> to enter (renewals $${formatNumber(getRenewalFee(entry.champ, cls.id))}/season),
+      so the car can't race until you've earned <b>$${formatNumber(entry.fee - left)}</b> more.`,
+    confirmLabel: 'Buy anyway',
+    onConfirm: buy,
+  });
 }
 
 function renderGarage() {
@@ -411,6 +442,7 @@ function renderGarage() {
     const garageSlotOk = usedSlots < totalSlots;
     const canBuy     = repOk && ppOk && moneyOk && classSlotOk && garageSlotOk;
     const locked     = !repOk || !ppOk;
+    const cheapest   = _cheapestClassEntry(cls);
 
     let lockMsg = '';
     if (!repOk)          lockMsg = `Requires ${formatNumber(cls.repRequired)} REP`;
@@ -427,7 +459,7 @@ function renderGarage() {
         <div class="cls-series">${_classSeriesText(cls)}</div>
         <button class="btn buy-car-btn ${canBuy ? '' : 'disabled'}"
           data-class="${cls.id}" ${canBuy ? '' : 'disabled'}>
-          $${formatNumber(cls.baseCost)}
+          $${formatNumber(cls.baseCost)}${cheapest ? ` <span class="buy-car-entry">+ $${formatNumber(cheapest.fee)} entry</span>` : ''}
         </button>
       </div>`;
   });
@@ -543,9 +575,7 @@ function renderGarage() {
   // Buy car buttons
   container.querySelectorAll('.buy-car-btn').forEach(btn => {
     btn.addEventListener('click', () => {
-      const result = buyCar(btn.dataset.class);
-      if (!result.ok) addNotification(result.msg, 'error');
-      renderGarage();
+      _buyCarChecked(btn.dataset.class);
     });
   });
 

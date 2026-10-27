@@ -4,6 +4,15 @@
 
 const CHANGELOG = [
   {
+    version: '0.5.6',
+    date: '2026-10-27',
+    title: 'Entry fees before you buy',
+    changes: [
+      'The Buy Car cards show the entry fee of every series the class races (hover for the renewal fee), and the buy button adds the cheapest one.',
+      'Buying a car asks first when the money left would not cover any entry fee for it.',
+    ],
+  },
+  {
     version: '0.5.5',
     date: '2026-10-27',
     title: 'Championship cards and engineers',

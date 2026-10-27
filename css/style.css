@@ -1147,6 +1147,7 @@ select { font-family: inherit; }
 /* ─── Player feedback round: sponsors, garage, drivers ──────────────────────── */
 .cls-series { font-size: 11px; color: var(--text-2); margin: 4px 0 6px; line-height: 1.4; }
 .cls-series-locked { color: var(--text-3, #666); }
+.buy-car-entry { opacity: 0.7; font-size: 0.9em; }
 .driver-salary { color: var(--amber); }
 .sponsor-held-rate { display: block; font-size: 11px; color: var(--text-2); font-weight: 400; }
 .sponsor-offer-preview {
