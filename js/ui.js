@@ -7,7 +7,6 @@ let _uiInterval = null;
 let _lastNotifCount = 0;
 let _selectedCarForChamp = null;
 let _signingSlotIndex = null;  // 0–4 or null
-let _sponsorOptions = [];      // array of 3 generated sponsor objects
 let _hiringTP = false;
 let _tpCandidates = [];
 let _hiringRECarId = null;     // carId being hired for, or null
@@ -737,7 +736,7 @@ function renderSponsors() {
       const catDef    = SPONSOR_CATEGORIES.find(c => c.id === sponsor.category);
       const tierDef   = SPONSOR_TIERS[sponsor.tier];
       const targetMet = isSponsorTargetMet(sponsor);
-      const targetLbl = SPONSOR_TARGET_LABELS[sponsor.target] || '';
+      const targetLbl = renderSponsorTargetText(sponsor.target);
       const contractLbl = sponsor.seasonsRemaining !== null
         ? `${sponsor.seasonsRemaining} season${sponsor.seasonsRemaining !== 1 ? 's' : ''} remaining`
         : 'Ongoing contract';
@@ -776,18 +775,20 @@ function renderSponsors() {
   html += `</div>`; // end sponsor-slots-list
 
   // ── Sign sponsor panel
-  if (_signingSlotIndex !== null && _sponsorOptions.length > 0) {
+  const offers = getSponsorOffers();
+  if (_signingSlotIndex !== null) {
     html += `
-      <div class="section-header">CHOOSE SPONSOR — Slot ${_signingSlotIndex + 1}</div>
+      <div class="section-header">SPONSOR OFFERS — Slot ${_signingSlotIndex + 1} · Season ${G.season}</div>`;
+    if (offers.length === 0) html += '<div class="empty-state">No offers left this season. New sponsors approach you next season.</div>';
+    html += `
       <div class="sponsor-options-grid">`;
-
-    _sponsorOptions.forEach((opt, idx) => {
+    offers.forEach(opt => {
       const catDef  = SPONSOR_CATEGORIES.find(c => c.id === opt.category);
       const tierDef = SPONSOR_TIERS[opt.tier];
       const contractLbl = opt.seasonsRemaining !== null
         ? `${opt.seasonsRemaining} season${opt.seasonsRemaining !== 1 ? 's' : ''}`
         : 'Ongoing';
-      const targetLbl = SPONSOR_TARGET_LABELS[opt.target] || '';
+      const targetLbl = describeSponsorTarget(opt.target);
 
       let bonusParts = [];
       if (opt.bonusCash > 0) bonusParts.push(`$${formatNumber(opt.bonusCash)}`);
@@ -811,7 +812,7 @@ function renderSponsors() {
             <span>🎯 ${targetLbl}</span>
             ${bonusParts.length ? `<span>🏆 ${bonusParts.join(' + ')}</span>` : ''}
           </div>
-          <button class="btn choose-sponsor-btn" data-idx="${idx}">Sign Deal</button>
+          <button class="btn choose-sponsor-btn" data-offer="${opt.id}">Sign Deal</button>
         </div>`;
     });
 
@@ -825,7 +826,6 @@ function renderSponsors() {
   container.querySelectorAll('.sign-sponsor-btn:not([disabled])').forEach(btn => {
     btn.addEventListener('click', () => {
       _signingSlotIndex = parseInt(btn.dataset.slot);
-      _sponsorOptions = generateSponsorOptions();
       renderSponsors();
     });
   });
@@ -833,11 +833,9 @@ function renderSponsors() {
   // Events — choose deal
   container.querySelectorAll('.choose-sponsor-btn').forEach(btn => {
     btn.addEventListener('click', () => {
-      const opt = _sponsorOptions[parseInt(btn.dataset.idx)];
-      const result = signSponsor(_signingSlotIndex, opt);
+      const result = signSponsorOffer(_signingSlotIndex, btn.dataset.offer);
       if (result.ok) {
         _signingSlotIndex = null;
-        _sponsorOptions = [];
       } else {
         addNotification(result.msg, 'error');
       }
@@ -850,7 +848,6 @@ function renderSponsors() {
   if (cancelBtn) {
     cancelBtn.addEventListener('click', () => {
       _signingSlotIndex = null;
-      _sponsorOptions = [];
       renderSponsors();
     });
   }
@@ -863,6 +860,14 @@ function renderSponsors() {
       renderSponsors();
     });
   });
+}
+
+// Target description with this season's progress, e.g. "3 round podiums this season (1/3)"
+function renderSponsorTargetText(target) {
+  const label = describeSponsorTarget(target);
+  if (!target || typeof target !== 'object') return label;
+  const p = getSponsorTargetProgress(target);
+  return p.need > 1 ? `${label} (${Math.min(p.have, p.need)}/${p.need})` : label;
 }
 
 // ─── Targeted in-place sponsor updates ───────────────────────────────────────
@@ -881,7 +886,7 @@ function updateSponsorsLive() {
     const targetEl = document.querySelector(`[data-live-target="${s.id}"]`);
     if (targetEl) {
       const met = isSponsorTargetMet(s);
-      const lbl = SPONSOR_TARGET_LABELS[s.target] || '';
+      const lbl = renderSponsorTargetText(s.target);
       targetEl.textContent = (met ? '✓ ' : '✗ ') + lbl;
       targetEl.className = 'sponsor-target-badge ' + (met ? 'met' : 'unmet');
     }

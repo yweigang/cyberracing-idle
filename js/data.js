@@ -639,45 +639,63 @@ const SPONSOR_TIERS = {
     id: 'regional',
     label: 'Regional',
     color: '#4a8fff',
-    incomeMin: 20, incomeMax: 80,
+    incomeMin: 10, incomeMax: 25,
     contractMin: 1, contractMax: 2,
-    target: 'any_round_completed',
-    bonusCash: 10000, bonusRep: 0, bonusPP: 0,
+    targets: [
+      { type: 'round_podiums', countMin: 2, countMax: 4 },
+      { type: 'round_wins',    countMin: 1, countMax: 2 },
+    ],
+    bonusCash: 5000, bonusRep: 0, bonusPP: 0,
     unlocksLivery: false,
   },
   national: {
     id: 'national',
     label: 'National',
     color: '#00d4ff',
-    incomeMin: 100, incomeMax: 300,
+    incomeMin: 40, incomeMax: 100,
     contractMin: 2, contractMax: 3,
-    target: 'any_champ_completed',
-    bonusCash: 40000, bonusRep: 200, bonusPP: 0,
+    targets: [
+      { type: 'champ_top',  pos: 3, minTier: 1 },
+      { type: 'round_wins', countMin: 3, countMax: 6 },
+    ],
+    bonusCash: 25000, bonusRep: 50, bonusPP: 0,
     unlocksLivery: false,
   },
   international: {
     id: 'international',
     label: 'International',
     color: '#ff8800',
-    incomeMin: 400, incomeMax: 1000,
+    incomeMin: 200, incomeMax: 500,
     contractMin: 3, contractMax: 3,
-    target: 'major_champ_completed',
-    bonusCash: 150000, bonusRep: 1000, bonusPP: 0,
+    targets: [
+      { type: 'major_top', pos: 3 },
+      { type: 'champ_top', pos: 1, minTier: 3 },
+    ],
+    bonusCash: 150000, bonusRep: 250, bonusPP: 0,
     unlocksLivery: false,
   },
   factory: {
     id: 'factory',
     label: 'Factory Title',
     color: '#ff0055',
-    incomeMin: 2000, incomeMax: 5000,
+    incomeMin: 1500, incomeMax: 3000,
     contractMin: null, contractMax: null,
-    target: 'top_champ_completed',
+    targets: [
+      { type: 'top_title' },
+    ],
     bonusCash: 0, bonusRep: 0, bonusPP: 5,
     unlocksLivery: true,
   },
 };
 
-// Human-readable descriptions for target types
+// Championships that count as "major" for sponsor targets
+const MAJOR_CHAMPIONSHIPS = ['imsa_weathertech', 'elms', 'fia_wec', 'formula_2_championship', 'f1_world_championship'];
+const TOP_CHAMPIONSHIPS   = ['fia_wec', 'f1_world_championship'];
+
+// Sponsor offers available per season (fixed until the season ends)
+const SPONSOR_OFFERS_PER_SEASON = 4;
+
+// Labels for contracts signed before result targets existed
 const SPONSOR_TARGET_LABELS = {
   any_round_completed: 'Top 10 in any championship round this season',
   any_champ_completed: 'Complete any championship this season',

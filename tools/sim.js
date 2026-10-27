@@ -34,11 +34,6 @@ var BOT = {
     if (G.cars.length >= getGarageSlots(G.garageLevel) && ng && G.reputation >= ng.repRequired) goal += ng.cost;
     return goal;
   },
-  canMajor() {
-    return CHAMPIONSHIPS.some(c => ['imsa_weathertech', 'elms', 'fia_wec'].includes(c.id)
-      && G.reputation >= c.repRequired && checkChampionshipPrerequisite(c)
-      && G.cars.some(car => c.allowedClasses.includes(car.classId)));
-  },
   step() {
     while (G.drivers.length < G.cars.length) scoutDriver('C');
     // Highest-tier cars get licensed drivers first, taking them from lower-tier cars
@@ -49,12 +44,11 @@ var BOT = {
         .sort((a, b) => (a.carId ? 1 : 0) - (b.carId ? 1 : 0) || b.pace - a.pace);
       for (const d of pool) if (assignDriver(d.id, car.id).ok) break;
     });
-    // Sponsors: best of a single roll whose target is reachable
+    // Sponsors: sign this season's best offer (targets are not checked)
     for (let i = 0; i < getSponsorSlotsUnlocked(); i++) {
       if (G.sponsors[i]) continue;
-      const opts = generateSponsorOptions().filter(o => o.tier !== 'international' || BOT.canMajor())
-        .sort((a, b) => b.incomePerSec - a.incomePerSec);
-      if (opts[0]) signSponsor(i, opts[0]);
+      const best = [...getSponsorOffers()].sort((a, b) => b.incomePerSec - a.incomePerSec)[0];
+      if (best) signSponsorOffer(i, best.id);
     }
     // Garage expansion when full
     const ng = getGarageNextUpgrade(G.garageLevel);

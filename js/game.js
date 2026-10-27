@@ -51,6 +51,7 @@ function createDefaultState() {
       purchased: [],
     },
     sponsors: [null, null, null, null, null],
+    sponsorOffers: null,       // { season, offers } — fixed sponsor offers for the current season
     hasFactoryLivery: false,
     teamPrincipal: null,
     raceEngineers: {},
@@ -403,6 +404,7 @@ function finishChampionship(entry) {
     classId: entry.classId || (car && car.classId),
     finalPosition: finalPos,
     points: entry.points,
+    results: entry.results.slice(),
     lpGained,
     repEarned: entry.repEarned,
     prizeEarned: entry.prizeEarned + bonusCash,
@@ -568,37 +570,93 @@ function getSponsorSlotsUnlocked() {
   return slots;
 }
 
+// Round results (positions, 'DNF', 'DNS') raced this season
+function _seasonRoundResults() {
+  const done = G.completedChampionships.filter(c => c.season === G.season).flatMap(c => c.results || []);
+  const live = G.activeChampionships.flatMap(e => e.results || []);
+  return done.concat(live);
+}
+
+// { have, need } toward a sponsor target this season
+function getSponsorTargetProgress(target) {
+  const season = G.completedChampionships.filter(c => c.season === G.season);
+  const tierOf = c => { const cls = getCarClassById(c.classId); return cls ? cls.tier : 0; };
+  switch (target.type) {
+    case 'round_podiums':
+      return { have: _seasonRoundResults().filter(r => typeof r === 'number' && r <= 3).length, need: target.count };
+    case 'round_wins':
+      return { have: _seasonRoundResults().filter(r => r === 1).length, need: target.count };
+    case 'champ_top':
+      return { have: season.some(c => c.finalPosition <= target.pos && tierOf(c) >= (target.minTier || 1)) ? 1 : 0, need: 1 };
+    case 'major_top':
+      return { have: season.some(c => c.finalPosition <= target.pos && MAJOR_CHAMPIONSHIPS.includes(c.definitionId)) ? 1 : 0, need: 1 };
+    case 'top_title':
+      return { have: season.some(c => c.finalPosition === 1 && TOP_CHAMPIONSHIPS.includes(c.definitionId)) ? 1 : 0, need: 1 };
+    default:
+      return { have: 0, need: 1 };
+  }
+}
+
+function describeSponsorTarget(target) {
+  if (typeof target === 'string') return SPONSOR_TARGET_LABELS[target] || target;
+  switch (target.type) {
+    case 'round_podiums': return `${target.count} round podium${target.count > 1 ? 's' : ''} this season`;
+    case 'round_wins':    return `${target.count} round win${target.count > 1 ? 's' : ''} this season`;
+    case 'champ_top': {
+      const where = target.minTier > 1 ? ` (${CAR_CLASSES.filter(c => c.tier === target.minTier && !c.pathway).map(c => c.name).join('/')} or higher)` : '';
+      return target.pos === 1 ? `Win a championship${where} this season` : `Top ${target.pos} in a championship${where} this season`;
+    }
+    case 'major_top': return `Top ${target.pos} in a major championship (IMSA, ELMS, WEC, F2, F1)`;
+    case 'top_title': return 'Win FIA WEC or the F1 World Championship this season';
+    default: return '';
+  }
+}
+
 function isSponsorTargetMet(sponsor) {
-  if (!sponsor.target) return true;
+  const target = sponsor.target;
+  if (!target) return true;
+  if (typeof target === 'object') {
+    const p = getSponsorTargetProgress(target);
+    return p.have >= p.need;
+  }
+  // Contracts signed before result targets
   const thisSeasonChamps = G.completedChampionships.filter(c => c.season === G.season);
-  switch (sponsor.target) {
+  switch (target) {
     case 'any_round_completed':
-      return thisSeasonChamps.length > 0 ||
-             G.activeChampionships.some(c => c.currentRound > 0);
+      return thisSeasonChamps.length > 0 || G.activeChampionships.some(c => c.currentRound > 0);
     case 'any_champ_completed':
       return thisSeasonChamps.length > 0;
     case 'major_champ_completed':
-      return thisSeasonChamps.some(c =>
-        ['imsa_weathertech', 'elms', 'fia_wec', 'f1_world_championship'].includes(c.definitionId));
+      return thisSeasonChamps.some(c => MAJOR_CHAMPIONSHIPS.includes(c.definitionId));
     case 'top_champ_completed':
-      return thisSeasonChamps.some(c =>
-        ['fia_wec', 'f1_world_championship'].includes(c.definitionId));
+      return thisSeasonChamps.some(c => TOP_CHAMPIONSHIPS.includes(c.definitionId));
     default:
       return false;
   }
 }
 
+function _bestFinish(champIds) {
+  return G.completedChampionships.filter(c => champIds.includes(c.definitionId) && c.finalPosition)
+    .reduce((m, c) => Math.min(m, c.finalPosition), Infinity);
+}
+
+// Sponsor tiers interested in the team, based on results so far
 function getAvailableSponsorTiers() {
   const tiers = ['regional'];
-  if ((G.champCompletions['gt4_regional'] || 0) > 0)
-    tiers.push('national');
-  if ((G.champCompletions['gt_world_challenge'] || 0) > 0 ||
-      (G.champCompletions['imsa_weathertech'] || 0) > 0)
-    tiers.push('international');
-  if ((G.champCompletions['fia_wec'] || 0) > 0 ||
-      (G.champCompletions['f1_world_championship'] || 0) > 0)
-    tiers.push('factory');
+  const anyTop3 = G.completedChampionships.some(c => c.finalPosition && c.finalPosition <= 3);
+  if (anyTop3) tiers.push('national');
+  if (_bestFinish(MAJOR_CHAMPIONSHIPS) <= 5) tiers.push('international');
+  if (_bestFinish(TOP_CHAMPIONSHIPS) <= 3) tiers.push('factory');
   return tiers;
+}
+
+function _rollTarget(tierDef) {
+  const t = tierDef.targets[Math.floor(Math.random() * tierDef.targets.length)];
+  const target = { type: t.type };
+  if (t.countMin !== undefined) target.count = t.countMin + Math.floor(Math.random() * (t.countMax - t.countMin + 1));
+  if (t.pos !== undefined) target.pos = t.pos;
+  if (t.minTier !== undefined) target.minTier = t.minTier;
+  return target;
 }
 
 function generateSponsor(tier) {
@@ -616,12 +674,13 @@ function generateSponsor(tier) {
     : null;
 
   return {
-    id: 'sp_' + Date.now() + '_' + Math.floor(Math.random() * 9999),
+    id: 'sp_' + Date.now() + '_' + Math.floor(Math.random() * 1e6),
     name: brand + ' ' + suffix,
     category: cat.id,
     tier,
     incomePerSec,
     seasonsRemaining,
+    target: _rollTarget(tierDef),
     bonusCash: tierDef.bonusCash,
     bonusRep: tierDef.bonusRep,
     bonusPP: tierDef.bonusPP,
@@ -629,22 +688,26 @@ function generateSponsor(tier) {
   };
 }
 
-function generateSponsorOptions() {
-  const availTiers = getAvailableSponsorTiers();
-  const options = [];
-  const usedNames = new Set();
-  let attempts = 0;
-  while (options.length < 3 && attempts < 30) {
-    const tier = availTiers[Math.floor(Math.random() * availTiers.length)];
-    const s = generateSponsor(tier);
-    if (!usedNames.has(s.name)) {
-      usedNames.add(s.name);
-      options.push(s);
+// Offers are generated once per season; the best available tier is always offered
+function getSponsorOffers() {
+  if (!G.sponsorOffers || G.sponsorOffers.season !== G.season) {
+    const tiers = getAvailableSponsorTiers();
+    const offers = [generateSponsor(tiers[tiers.length - 1])];
+    while (offers.length < SPONSOR_OFFERS_PER_SEASON) {
+      offers.push(generateSponsor(tiers[Math.floor(Math.random() * tiers.length)]));
     }
-    attempts++;
+    G.sponsorOffers = { season: G.season, offers };
   }
-  while (options.length < 3) options.push(generateSponsor(availTiers[0]));
-  return options;
+  return G.sponsorOffers.offers;
+}
+
+function signSponsorOffer(slotIndex, offerId) {
+  const offers = getSponsorOffers();
+  const idx = offers.findIndex(o => o.id === offerId);
+  if (idx === -1) return { ok: false, msg: 'Offer no longer available.' };
+  const res = signSponsor(slotIndex, offers[idx]);
+  if (res.ok) offers.splice(idx, 1);
+  return res;
 }
 
 function signSponsor(slotIndex, sponsorData) {

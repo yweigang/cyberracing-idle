@@ -167,6 +167,40 @@ test('Higher-tier scouts arrive with licenses and earn no LP for them', () => {
   assert(!('GT3' in earned) && earned.LMP3 === undefined && earned.LMP2 > 0, 'no LP toward held licenses');
 });
 
+test('Sponsor offers are fixed for the season and refresh next season', () => {
+  const { g } = setup();
+  const first = g.run('getSponsorOffers().map(o => o.id).join()');
+  assert(first === g.run('getSponsorOffers().map(o => o.id).join()'), 'same offers within a season');
+  const id = g.run('getSponsorOffers()[0].id');
+  assert(g.run(`signSponsorOffer(0, '${id}').ok`), 'sign works');
+  assert(g.run('getSponsorOffers().length') === 3, 'signed offer is removed');
+  g.run('endSeason()');
+  assert(g.run('getSponsorOffers().length') === 4 && g.run('getSponsorOffers().map(o => o.id).join()') !== first, 'fresh offers next season');
+});
+
+test('Sponsor targets track this season and end the contract when missed', () => {
+  const { g, a, car } = setup();
+  g.run(`G.sponsors[0] = Object.assign(generateSponsor('regional'), { target: { type: 'round_podiums', count: 3 }, seasonsRemaining: 2 })`);
+  assert(g.run('getSponsorTargetProgress(G.sponsors[0].target).have') === 0, 'no podiums yet');
+  g.run(`assignDriver('${a}', '${car}'); UPGRADE_ORDER.forEach(u => G.cars[0].upgrades[u] = 12);`);
+  finishChamp(g, 'gt4_regional', car);
+  assert(g.run('getSponsorTargetProgress(G.sponsors[0].target).have') >= 3, 'podiums counted from results');
+  const m = g.run('G.money');
+  g.run('endSeason()');
+  assert(g.run('G.sponsors[0] && G.sponsors[0].seasonsRemaining') === 1, 'contract continues');
+  assert(g.run('G.money') - m >= 5000, 'season bonus paid');
+  g.run('endSeason()');
+  assert(g.run('G.sponsors[0]') === null, 'missed target ends contract');
+});
+
+test('Sponsor tiers open up with results', () => {
+  const { g, a, car } = setup();
+  assert(g.run('getAvailableSponsorTiers().join()') === 'regional', 'only regional at start');
+  g.run(`assignDriver('${a}', '${car}'); UPGRADE_ORDER.forEach(u => G.cars[0].upgrades[u] = 12);`);
+  finishChamp(g, 'gt4_regional', car);
+  assert(g.run('getAvailableSponsorTiers().includes("national")'), 'podium finish unlocks national');
+});
+
 let failed = 0;
 for (const t of tests) {
   try { t.fn(); console.log('PASS', t.name); }
