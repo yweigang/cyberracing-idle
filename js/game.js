@@ -746,6 +746,25 @@ function generateDriverStats(tier, randFn) {
 
 // ─── Driver System ────────────────────────────────────────────────────────────
 
+// Names of everyone on the team (drivers and staff), plus any extra people passed in
+function _takenNames(extra = []) {
+  const staff = [G.teamPrincipal, ...Object.values(G.raceEngineers || {})].filter(Boolean);
+  return new Set([...G.drivers, ...staff, ...extra].map(p => p.name));
+}
+
+// A random "First Last" nobody on the team has. If every combination is taken,
+// the name gets a number.
+function _uniqueName(firstNames, lastNames, extraTaken = []) {
+  const taken = _takenNames(extraTaken);
+  const pick = list => list[Math.floor(Math.random() * list.length)];
+  let name = pick(firstNames) + ' ' + pick(lastNames);
+  for (let i = 0; i < 200 && taken.has(name); i++) name = pick(firstNames) + ' ' + pick(lastNames);
+  if (!taken.has(name)) return name;
+  let n = 2;
+  while (taken.has(`${name} ${n}`)) n++;
+  return `${name} ${n}`;
+}
+
 let _allowLockedScout = false;
 
 function scoutDriver(tier) {
@@ -759,7 +778,7 @@ function scoutDriver(tier) {
   G.money -= effectiveScoutCost;
 
   const { stats, primaryStat } = generateDriverStats(tier, Math.random);
-  const name = DRIVER_NAMES[Math.floor(Math.random() * DRIVER_NAMES.length)];
+  const name = _uniqueName(DRIVER_FIRST_NAMES, DRIVER_LAST_NAMES);
 
   const ageRange = DRIVER_AGE_RANGES[tier] || { min: 18, max: 35 };
   const age = ageRange.min + Math.floor(Math.random() * (ageRange.max - ageRange.min + 1));
@@ -1136,12 +1155,13 @@ function getEffectiveUpgradeCost(upgradeId, currentLevel, classId) {
   return Math.max(1, Math.floor(base * _crewCostMult()));
 }
 
-function _generateStaff(type, tier) {
+// extraTaken: candidates generated alongside this one, so a shortlist has no repeats
+function _generateStaff(type, tier, extraTaken = []) {
   const statKeys   = type === 'tp' ? TP_STAT_KEYS   : RE_STAT_KEYS;
   const statConfig = type === 'tp' ? TP_STAT_CONFIG  : RE_STAT_CONFIG;
   const tierDef    = type === 'tp' ? TP_TIERS[tier]  : RE_TIERS[tier];
   const { stats, primaryStat } = generateBudgetStats(statKeys, statConfig, tier, Math.random);
-  const name = STAFF_NAMES[Math.floor(Math.random() * STAFF_NAMES.length)];
+  const name = _uniqueName(STAFF_FIRST_NAMES, STAFF_LAST_NAMES, extraTaken);
   const obj  = {
     id: 'staff_' + Date.now() + '_' + Math.floor(Math.random() * 9999),
     type,
@@ -1155,15 +1175,17 @@ function _generateStaff(type, tier) {
 }
 
 function generateTPOptions() {
-  return Object.keys(TP_TIERS)
-    .filter(tier => !TP_TIERS[tier].locked)
-    .map(tier => _generateStaff('tp', tier));
+  const options = [];
+  Object.keys(TP_TIERS).filter(tier => !TP_TIERS[tier].locked)
+    .forEach(tier => options.push(_generateStaff('tp', tier, options)));
+  return options;
 }
 
 function generateREOptions() {
-  return Object.keys(RE_TIERS)
-    .filter(tier => !RE_TIERS[tier].locked)
-    .map(tier => _generateStaff('re', tier));
+  const options = [];
+  Object.keys(RE_TIERS).filter(tier => !RE_TIERS[tier].locked)
+    .forEach(tier => options.push(_generateStaff('re', tier, options)));
+  return options;
 }
 
 function hireTP(staffData) {
@@ -1794,6 +1816,7 @@ function loadGame() {
     if (!G.hq) G.hq = { simulator: 0, composites: 0, hospitality: 0 };
     G.cars.forEach(c => { if (!c.coDriverIds) c.coDriverIds = []; }); // saves before driver lineups
     _migrateBoP();
+    _migrateDuplicateNames();
     return true;
   } catch (e) {
     console.warn('Load failed:', e);
@@ -1848,6 +1871,21 @@ function _migrateBoP() {
     G.money += refund;
     addNotification(`Cars now run under Balance of Performance. Car upgrades were refunded: +$${formatNumber(refund)}.`, 'success');
   }
+}
+
+// Saves from before unique names: later drivers and staff that share a name get a new one
+function _migrateDuplicateNames() {
+  const people = [...G.drivers, G.teamPrincipal, ...Object.values(G.raceEngineers || {})].filter(Boolean);
+  const seen = new Set();
+  people.forEach(p => {
+    if (!seen.has(p.name)) { seen.add(p.name); return; }
+    const old = p.name;
+    const isDriver = G.drivers.includes(p);
+    p.name = '';
+    p.name = isDriver ? _uniqueName(DRIVER_FIRST_NAMES, DRIVER_LAST_NAMES) : _uniqueName(STAFF_FIRST_NAMES, STAFF_LAST_NAMES);
+    seen.add(p.name);
+    addNotification(`Two team members were both called ${old}; one is now ${p.name}.`, 'info');
+  });
 }
 
 function resetGame() {

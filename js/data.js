@@ -536,10 +536,16 @@ function getCareerStage(age) {
     || CAREER_STAGES[CAREER_STAGES.length - 1];
 }
 
-const DRIVER_NAMES = [
-  'Alex Mercer', 'Jordan Kane', 'Nico Voss', 'Lena Carver', 'Riku Tanaka',
-  'Sara Blaine', 'Theo Marsh', 'Dani Reyes', 'Kira Stone', 'Oscar Flynn',
-  'Maya Cruz', 'Lars Brandt', 'Vance Cole', 'Iris Park', 'Eli Dorn',
+// Driver names are a random first + last name, never one already on the team
+const DRIVER_FIRST_NAMES = [
+  'Alex', 'Jordan', 'Nico', 'Lena', 'Riku', 'Sara', 'Theo', 'Dani', 'Kira', 'Oscar',
+  'Maya', 'Lars', 'Vance', 'Iris', 'Eli', 'Mira', 'Jonas', 'Talia', 'Ruben', 'Anya',
+  'Felix', 'Noor', 'Emil', 'Sofia', 'Kai', 'Leona', 'Mateo', 'Yara', 'Hugo', 'Ines',
+];
+const DRIVER_LAST_NAMES = [
+  'Mercer', 'Kane', 'Voss', 'Carver', 'Tanaka', 'Blaine', 'Marsh', 'Reyes', 'Stone', 'Flynn',
+  'Cruz', 'Brandt', 'Cole', 'Park', 'Dorn', 'Halden', 'Okafor', 'Lindqvist', 'Moreau', 'Sato',
+  'Varga', 'Quinn', 'Ashby', 'Delacroix', 'Novak', 'Brenner', 'Castell', 'Ivers', 'Rhee', 'Thorne',
 ];
 
 // ─── Prestige Shop ────────────────────────────────────────────────────────────
@@ -869,8 +875,11 @@ const RE_STAT_DESCS = {
   dataAnalysis:           'Boosts championship final payout bonus',
 };
 
-const STAFF_NAMES = [
-  'Marco Rossi', 'James Wright', 'Elena Kovač', 'Yuki Hara', 'Chris Barlow',
-  'Sofia Andrade', 'Neil Hartley', 'Ana Santos', 'Raj Mehta', 'Tom Calloway',
-  'Ingrid Bauer', 'Luca Ferrante', 'Mei Chen', 'Ben Archer', 'Natasha Volkov',
+const STAFF_FIRST_NAMES = [
+  'Marco', 'James', 'Elena', 'Yuki', 'Chris', 'Sofia', 'Neil', 'Ana', 'Raj', 'Tom',
+  'Ingrid', 'Luca', 'Mei', 'Ben', 'Natasha', 'Pieter', 'Grace', 'Omar', 'Hanna', 'Diego',
+];
+const STAFF_LAST_NAMES = [
+  'Wright', 'Kovač', 'Hara', 'Barlow', 'Andrade', 'Hartley', 'Santos', 'Mehta', 'Calloway', 'Bauer',
+  'Ferrante', 'Chen', 'Archer', 'Volkov', 'Lindgren', 'Okoro', 'Whitfield', 'Navarro', 'Strand', 'Keller',
 ];

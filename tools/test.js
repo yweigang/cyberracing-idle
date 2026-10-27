@@ -472,6 +472,25 @@ test('A registration that cannot start is refunded', () => {
   assert(g.run('G.money') - m === 5000 && g.run('G.activeChampionships.length') === 0, 'fee refunded, nothing started');
 });
 
+test('Drivers and staff never share a name', () => {
+  const { g } = setup();
+  g.run('for (let i = 0; i < 300; i++) scoutDriver("C");');
+  const names = g.run('G.drivers.map(d => d.name)');
+  assert(new Set(names).size === names.length, 'all driver names unique');
+  const staff = g.run('generateREOptions().concat(generateTPOptions()).map(s => s.name)');
+  assert(staff.every(n => !names.includes(n)), 'staff candidates avoid driver names');
+  assert(new Set(g.run('generateREOptions().map(s => s.name)')).size === g.run('generateREOptions().length'), 'no repeats in a shortlist');
+  g.run('for (let i = 0; i < 700; i++) scoutDriver("C");');
+  const all = g.run('G.drivers.map(d => d.name)');
+  assert(new Set(all).size === all.length, 'still unique once every combination is used: ' + all.length);
+});
+
+test('Saves with duplicate names get one of them renamed', () => {
+  const { g, a, b } = setup();
+  g.run(`G.drivers.find(d => d.id === '${b}').name = G.drivers.find(d => d.id === '${a}').name; saveGame(); loadGame();`);
+  assert(driver(g, a).name !== driver(g, b).name, 'duplicate renamed');
+});
+
 let failed = 0;
 for (const t of tests) {
   try { t.fn(); console.log('PASS', t.name); }
