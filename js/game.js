@@ -754,8 +754,8 @@ function describeSponsorTarget(target) {
       const where = target.minTier > 1 ? ` (${CAR_CLASSES.filter(c => c.tier === target.minTier && !c.pathway).map(c => c.name).join('/')} or higher)` : '';
       return target.pos === 1 ? `Win a championship${where} this season` : `Top ${target.pos} in a championship${where} this season`;
     }
-    case 'major_top': return `Top ${target.pos} in a major championship (IMSA, ELMS, WEC, F2, F1)`;
-    case 'top_title': return 'Win FIA WEC or the F1 World Championship this season';
+    case 'major_top': return `Top ${target.pos} in a major championship (NA Endurance, Euro Endurance, World Endurance, F2 Global, Formula World)`;
+    case 'top_title': return 'Win the World Endurance Cup or the Formula World Championship this season';
     default: return '';
   }
 }
