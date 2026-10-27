@@ -1097,6 +1097,33 @@ select { font-family: inherit; }
 }
 .cancel-sign-btn { color: var(--text-2); }
 
+/* ─── Confirmation dialog ─────────────────────────────────────────────────── */
+.dialog-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.65);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 16px;
+}
+.dialog {
+  background: var(--bg-2);
+  border: 1px solid var(--border-hi);
+  border-radius: var(--radius-lg);
+  padding: 20px 22px;
+  width: 100%;
+  max-width: 440px;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+}
+.dialog-title { font-size: 16px; font-weight: 700; color: var(--text-1); margin-bottom: 12px; }
+.dialog-body { font-size: 13px; color: var(--text-2); line-height: 1.5; }
+.dialog-list { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 6px; }
+.dialog-warn { color: var(--amber); }
+.sell-blocked { font-size: 10px; color: var(--text-3); margin-top: 3px; max-width: 180px; text-align: right; }
+.dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
+
 /* ─── Next-season registrations (Championships) ───────────────────────────── */
 .next-season-list { display: flex; flex-direction: column; gap: 6px; margin-bottom: 20px; }
 .next-season-row {

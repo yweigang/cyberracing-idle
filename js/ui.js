@@ -12,7 +12,6 @@ let _tpCandidates = [];
 let _hiringRECarId = null;     // carId being hired for, or null
 let _reCandidates = [];
 let _confirmingReset = false;
-let _confirmSellCarId = null;
 let _confirmingPrestige = false;
 
 // ─── Tab Navigation ───────────────────────────────────────────────────────────
@@ -42,6 +41,44 @@ function renderActivePanel() {
     case 'hq':            renderHQ(); break;
     case 'prestige':      renderPrestige(); break;
   }
+}
+
+// ─── Confirmation Dialog ──────────────────────────────────────────────────────
+
+// Modal confirm dialog. body is trusted HTML built by the caller. Esc or a click
+// outside cancels; Enter confirms.
+function showConfirmDialog({ title, body, confirmLabel = 'Confirm', danger = false, onConfirm }) {
+  closeConfirmDialog();
+  const overlay = document.createElement('div');
+  overlay.className = 'dialog-overlay';
+  overlay.id = 'confirm-dialog';
+  overlay.innerHTML = `
+    <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="dialog-title">
+      <div class="dialog-title" id="dialog-title">${title}</div>
+      <div class="dialog-body">${body}</div>
+      <div class="dialog-actions">
+        <button class="btn" id="dialog-cancel">Cancel</button>
+        <button class="btn ${danger ? 'btn-danger' : ''}" id="dialog-confirm">${confirmLabel}</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  const confirm = () => { closeConfirmDialog(); onConfirm(); };
+  overlay.querySelector('#dialog-confirm').addEventListener('click', confirm);
+  overlay.querySelector('#dialog-cancel').addEventListener('click', closeConfirmDialog);
+  overlay.addEventListener('click', e => { if (e.target === overlay) closeConfirmDialog(); });
+  overlay._onKey = e => {
+    if (e.key === 'Escape') closeConfirmDialog();
+    else if (e.key === 'Enter') { e.preventDefault(); confirm(); }
+  };
+  document.addEventListener('keydown', overlay._onKey);
+  overlay.querySelector('#dialog-cancel').focus();
+}
+
+function closeConfirmDialog() {
+  const overlay = document.getElementById('confirm-dialog');
+  if (!overlay) return;
+  document.removeEventListener('keydown', overlay._onKey);
+  overlay.remove();
 }
 
 // ─── Currency Bar ─────────────────────────────────────────────────────────────
@@ -181,6 +218,36 @@ function _renderLineup(car) {
   return `<div class="car-lineup">${html}${note}${reserveNote}</div>`;
 }
 
+// Asks before selling a car, listing what the sale does
+function _confirmSellCar(carId) {
+  const car = G.cars.find(c => c.id === carId);
+  if (!car) return;
+  const value = getCarSellValue(car);
+  const entry = car.championshipId && G.activeChampionships.find(e => e.id === car.championshipId);
+  const reg = getRegistration(car.id);
+  const lineup = getCarLineup(car);
+  const re = getREForCar(car.id);
+  const points = [
+    `You receive <b>$${formatNumber(value)}</b> and free a garage slot.`,
+    lineup.length ? `${lineup.map(d => d.name).join(', ')} ${lineup.length > 1 ? 'go' : 'goes'} back to the driver roster.` : '',
+    entry ? `<span class="dialog-warn">${car.name} is racing in ${getChampionshipById(entry.definitionId).name}: that championship is abandoned and its entry fee is lost.</span>` : '',
+    reg ? `Its registration for ${getChampionshipById(reg.definitionId).name} next season is cancelled and refunded.` : '',
+    re ? `<span class="dialog-warn">Race engineer ${re.name} leaves the team.</span>` : '',
+    G.cars.length === 1 ? `<span class="dialog-warn">This is your last car. You'll need to buy a new one to keep racing.</span>` : '',
+  ].filter(Boolean);
+  showConfirmDialog({
+    title: `Sell ${car.name}?`,
+    body: `<ul class="dialog-list">${points.map(p => `<li>${p}</li>`).join('')}</ul>`,
+    confirmLabel: `Sell for $${formatNumber(value)}`,
+    danger: true,
+    onConfirm: () => {
+      const result = sellCar(carId);
+      if (!result.ok) addNotification(result.msg, 'error');
+      renderGarage();
+    },
+  });
+}
+
 function renderGarage() {
   const container = document.getElementById('panel-garage');
 
@@ -233,7 +300,7 @@ function renderGarage() {
     let lockMsg = '';
     if (!repOk)          lockMsg = `Requires ${formatNumber(cls.repRequired)} REP`;
     else if (!ppOk)      lockMsg = `Requires ${cls.ppRequired} PP`;
-    else if (!garageSlotOk) lockMsg = 'Expand your garage';
+    else if (!garageSlotOk) lockMsg = 'Garage full: expand it or sell a car';
     else if (!classSlotOk)  lockMsg = `Max ${cls.maxOwned} owned`;
 
     buyCarsHtml += `
@@ -323,9 +390,11 @@ function renderGarage() {
               <div class="car-mult">car ${baseRating} · driver ×${paceMult.toFixed(2)} · DNF ${dnfPct}%</div>
               <div class="car-mult">setup +${(getSetupBonus(car) * 100).toFixed(1)}% (max ${SETUP_BONUS_MAX * 100}%) · crew +${(getPitCrewBonus(car) * 100).toFixed(1)}%</div>
               ${endRating !== null ? `<div class="car-mult">endurance ★ ${endRating} with ${Math.min(getCarLineup(car).length, endSize)}/${endSize} drivers · DNF ${Math.round(calcDNFChance(car, 'endurance', endSize) * 100)}%</div>` : ''}
-              ${G.cars.length > 1 && !car.championshipId
-                ? `<button class="btn btn-danger sell-car-btn" data-car="${car.id}">${_confirmSellCarId === car.id ? 'Confirm sell' : 'Sell'} $${formatNumber(getCarSellValue(car))}</button>`
-                : ''}
+              ${(() => {
+                const sell = canSellCar(car.id);
+                return `<button class="btn btn-danger sell-car-btn" data-car="${car.id}" ${sell.ok ? '' : `disabled title="${sell.msg}"`}>Sell $${formatNumber(getCarSellValue(car))}</button>`
+                  + (sell.ok ? '' : `<div class="sell-blocked">Last car: keep $${formatNumber(getRestartCost())} to sell it</div>`);
+              })()}
             </div>
           </div>
           <div class="car-meta">
@@ -364,18 +433,9 @@ function renderGarage() {
     });
   });
 
-  // Sell buttons: first click arms, second click sells
+  // Sell buttons open a confirmation dialog
   container.querySelectorAll('.sell-car-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-      if (_confirmSellCarId !== btn.dataset.car) {
-        _confirmSellCarId = btn.dataset.car;
-      } else {
-        const result = sellCar(btn.dataset.car);
-        if (!result.ok) addNotification(result.msg, 'error');
-        _confirmSellCarId = null;
-      }
-      renderGarage();
-    });
+    btn.addEventListener('click', () => _confirmSellCar(btn.dataset.car));
   });
 
   // Upgrade buttons

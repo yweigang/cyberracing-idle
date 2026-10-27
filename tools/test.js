@@ -210,7 +210,19 @@ test('Selling a car refunds part of its value and frees the slot', () => {
   assert(g.run(`sellCar('${car}').ok`), 'sell works');
   assert(g.run('G.money') - m === value && g.run('G.cars.length') === 1, 'refund paid and car removed');
   assert(g.run(`G.drivers.find(d => d.id === '${a}').carId`) === null, 'driver unassigned');
-  assert(g.run(`sellCar(G.cars[0].id).ok`) === false, 'cannot sell the last car');
+  g.run('G.money = 0');
+  assert(g.run(`sellCar(G.cars[0].id).ok`) && g.run('G.cars.length') === 0, 'last GT3 sells: its $25k covers a restart');
+  assert(g.run('G.money') === 25000, 'sale value received');
+});
+
+test('The last car cannot be sold if the team could not restart', () => {
+  const { g } = setup();
+  assert(g.run(`getRestartCost()`) === 15000, 'cheapest restart: GT4 $10k + GT4 Cup $5k');
+  g.run('G.money = 9999');
+  assert(!g.run(`sellCar(G.cars[0].id).ok`) && g.run('G.cars.length') === 1, '$5k sale + $9,999 is not enough');
+  g.run('G.money = 10000');
+  assert(g.run(`sellCar(G.cars[0].id).ok`) && g.run('G.cars.length') === 0, 'exactly enough is allowed');
+  assert(g.run(`buyCar('GT4').ok`) && g.run('G.money') === 5000, 'a new GT4 can be bought, with the entry fee left');
 });
 
 test('Prestige pays PP for results and resets upgrades but keeps drivers', () => {
@@ -489,6 +501,16 @@ test('Saves with duplicate names get one of them renamed', () => {
   const { g, a, b } = setup();
   g.run(`G.drivers.find(d => d.id === '${b}').name = G.drivers.find(d => d.id === '${a}').name; saveGame(); loadGame();`);
   assert(driver(g, a).name !== driver(g, b).name, 'duplicate renamed');
+});
+
+test('Selling a racing car abandons its championship and refunds its registration', () => {
+  const { g, a, car } = setup();
+  g.run(`G.reputation = 1000; upgradeGarage(); buyCar('GT3'); assignDriver('${a}', '${car}'); enterChampionship('gt4_regional', '${car}'); registerForNextSeason('gt4_regional', '${car}');`);
+  const m = g.run('G.money');
+  const value = g.run(`getCarSellValue(G.cars.find(c => c.id === '${car}'))`);
+  assert(g.run(`sellCar('${car}').ok`), 'racing car can be sold');
+  assert(g.run('G.activeChampionships.length') === 0 && g.run('G.registrations.length') === 0, 'championship and registration gone');
+  assert(g.run('G.money') - m === value + 5000, 'sale value plus the registration refund');
 });
 
 let failed = 0;

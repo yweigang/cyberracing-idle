@@ -359,13 +359,44 @@ function getCarSellValue(car) {
   return Math.floor((cls ? cls.baseCost : 0) * SELL_CAR_REFUND + upgradeSpend * SELL_UPGRADE_REFUND);
 }
 
+// Money needed to get racing again with no car: the cheapest car the team may buy
+// plus the cheapest entry fee of a series open to it
+function getRestartCost() {
+  let best = Infinity;
+  CAR_CLASSES.forEach(cls => {
+    if (cls.pathway === 'single_seater' && !isSingleSeaterUnlocked()) return;
+    if (G.reputation < cls.repRequired || (cls.ppRequired && G.prestigePoints < cls.ppRequired)) return;
+    const fees = CHAMPIONSHIPS.filter(c => c.allowedClasses.includes(cls.id)
+      && (!c.pathway || isSingleSeaterUnlocked())
+      && G.reputation >= (c.repRequired || 0) && checkChampionshipPrerequisite(c)).map(c => c.entryFee);
+    if (fees.length) best = Math.min(best, cls.baseCost + Math.min(...fees));
+  });
+  return best;
+}
+
+// Whether a car may be sold. The last car only sells if the money afterwards still
+// buys a new car and pays its entry fee, so the team can never get stuck.
+function canSellCar(carId) {
+  const car = G.cars.find(c => c.id === carId);
+  if (!car) return { ok: false, msg: 'Car not found.' };
+  if (G.cars.length === 1) {
+    const need = getRestartCost();
+    if (G.money + getCarSellValue(car) < need)
+      return { ok: false, msg: `You can't sell your last car unless you'd still have $${formatNumber(need)} for a new car and an entry fee.` };
+  }
+  return { ok: true };
+}
+
+// Sells a car. A championship it is racing in is abandoned (no fee refund);
+// a next-season registration is refunded.
 function sellCar(carId) {
   const idx = G.cars.findIndex(c => c.id === carId);
   if (idx === -1) return { ok: false, msg: 'Car not found.' };
   const car = G.cars[idx];
-  if (car.championshipId) return { ok: false, msg: 'Withdraw from the championship first.' };
-  if (G.cars.length <= 1) return { ok: false, msg: 'You cannot sell your last car.' };
+  const check = canSellCar(carId);
+  if (!check.ok) return check;
 
+  if (car.championshipId) withdrawFromChampionship(car.championshipId);
   const value = getCarSellValue(car);
   getCarLineup(car).forEach(d => { d.carId = null; });
   if (G.raceEngineers && G.raceEngineers[carId]) delete G.raceEngineers[carId];
