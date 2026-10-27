@@ -711,6 +711,56 @@ select { font-family: inherit; }
 .driver-xp  { color: var(--text-3); }
 .driver-ret-age { color: var(--text-3); font-size: 10px; }
 
+/* ─── Driver Licenses ────────────────────────────────────────────────────── */
+.driver-licenses {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 8px 12px;
+  background: var(--bg-3);
+  border-top: 1px solid var(--border);
+}
+.dlicense-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  align-items: center;
+}
+.dlicense-badge {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 8px;
+  background: #0a1e12;
+  border: 1px solid #1a4030;
+  color: var(--green);
+  letter-spacing: 0.5px;
+}
+.dlicense-progress-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--text-2);
+}
+.dlicense-next-name { font-weight: 600; color: var(--text-1); min-width: 70px; }
+.dlicense-pts       { font-family: var(--font-mono); color: var(--text-3); white-space: nowrap; }
+.dlicense-bar-wrap  { flex: 1; height: 4px; background: var(--bg-2); border-radius: 2px; overflow: hidden; }
+.dlicense-bar-fill  { height: 100%; background: var(--cyan); border-radius: 2px; transition: width 0.3s ease; }
+
+/* ─── Season Summary LP pills ─────────────────────────────────────────────── */
+.sds-lp-group { display: flex; gap: 4px; flex-wrap: wrap; }
+.sds-lp {
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 8px;
+  background: #0a1220;
+  border: 1px solid #1a3050;
+  color: var(--cyan);
+  font-family: var(--font-mono);
+  font-weight: 600;
+}
+
 .driver-assign select {
   background: var(--bg-3);
   border: 1px solid var(--border-hi);

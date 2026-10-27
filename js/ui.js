@@ -411,6 +411,40 @@ function renderChampionships() {
   });
 }
 
+// ─── Driver License Helper ────────────────────────────────────────────────────
+
+function renderDriverLicenses(driver) {
+  const licenses    = driver.licenses    || [];
+  const licensePoints = driver.licensePoints || {};
+
+  // Only show pathways that are currently visible
+  const visibleTiers = LICENSE_TIERS.filter(lt =>
+    lt.pathway === 'gt_endurance' || (lt.pathway === 'single_seater' && isSingleSeaterUnlocked())
+  );
+
+  // Held license badges
+  const heldHtml = visibleTiers
+    .filter(lt => licenses.includes(lt.id))
+    .map(lt => `<span class="dlicense-badge">${lt.name} ✓</span>`)
+    .join('');
+
+  // Find the first visible license not yet held — show its progress
+  const nextTier = visibleTiers.find(lt => !licenses.includes(lt.id));
+  let progressHtml = '';
+  if (nextTier) {
+    const current = licensePoints[nextTier.id] || 0;
+    const pct     = Math.min(100, Math.floor(current / nextTier.pointsRequired * 100));
+    progressHtml = `
+      <div class="dlicense-progress-row">
+        <span class="dlicense-next-name">${nextTier.name} License</span>
+        <span class="dlicense-pts">${current} / ${nextTier.pointsRequired} LP</span>
+        <div class="dlicense-bar-wrap"><div class="dlicense-bar-fill" style="width:${pct}%"></div></div>
+      </div>`;
+  }
+
+  return `<div class="driver-licenses">${heldHtml ? `<div class="dlicense-row">${heldHtml}</div>` : ''}${progressHtml}</div>`;
+}
+
 // ─── Drivers Panel ────────────────────────────────────────────────────────────
 
 function renderDrivers() {
@@ -492,6 +526,7 @@ function renderDrivers() {
             <span class="driver-xp">XP ${Math.floor(driver.xp)}</span>
             <span class="driver-ret-age">Retires ~${retAge}</span>
           </div>
+          ${renderDriverLicenses(driver)}
           <div class="driver-assign">
             <select class="assign-car-select" data-driver="${driver.id}">
               <option value="">Unassigned</option>
@@ -523,7 +558,12 @@ function renderDrivers() {
       const driverId = e.target.dataset.driver;
       const carId = e.target.value;
       if (carId) {
-        assignDriver(driverId, carId);
+        const result = assignDriver(driverId, carId);
+        if (!result.ok) {
+          addNotification(result.msg, 'error');
+          renderDrivers(); // reset select to previous state
+          return;
+        }
         addNotification('Driver assigned.', 'info');
       } else {
         unassignDriver(driverId);
@@ -1120,12 +1160,23 @@ function renderPrestige() {
         return `<span class="sds-stat ${cls}">${DRIVER_STAT_LABELS[k]} ${sign}${d}</span>`;
       }).filter(Boolean).join('');
 
+      // LP gained pills — filter to visible pathways only
+      const lpGained = rec.lpGained || {};
+      const lpPills = Object.entries(lpGained)
+        .filter(([licenseId]) => {
+          const lt = LICENSE_TIERS.find(t => t.id === licenseId);
+          return lt && (lt.pathway === 'gt_endurance' || (lt.pathway === 'single_seater' && isSingleSeaterUnlocked()));
+        })
+        .map(([licenseId, pts]) => `<span class="sds-lp">+${pts} LP → ${licenseId}</span>`)
+        .join('');
+
       html += `
         <div class="sds-row">
           <span class="sds-name">${rec.name}</span>
           <span class="sds-age">${rec.ageBefore} → ${rec.ageAfter}</span>
           <span class="sds-stage" style="color:${stageColor}">${stageLbl}</span>
           <span class="sds-stats">${statPills || '<span class="sds-nochange">No change</span>'}</span>
+          ${lpPills ? `<span class="sds-lp-group">${lpPills}</span>` : ''}
         </div>`;
     });
 

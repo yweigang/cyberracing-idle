@@ -51,6 +51,7 @@ function createDefaultState() {
     hasFactoryLivery: false,
     teamPrincipal: null,
     raceEngineers: {},
+    licensePtMultiplier: LICENSE_CONFIG.defaultMultiplier,
     notifications: [],
   };
 }
@@ -326,6 +327,8 @@ function scoutDriver(tier) {
     age,
     retirementAge,
     carId: null,
+    licenses: ['GT4'],
+    licensePoints: Object.fromEntries(LICENSE_TIERS.map(lt => [lt.id, lt.id === 'GT4' ? lt.pointsRequired : 0])),
   };
   G.drivers.push(driver);
   return { ok: true, driver };
@@ -343,6 +346,14 @@ function assignDriver(driverId, carId) {
   const driver = G.drivers.find(d => d.id === driverId);
   const car = G.cars.find(c => c.id === carId);
   if (!driver || !car) return { ok: false, msg: 'Driver or car not found.' };
+
+  const requiredLicenseId = CLASS_LICENSE_REQUIREMENT[car.classId];
+  if (requiredLicenseId && !(driver.licenses || []).includes(requiredLicenseId)) {
+    const licenseDef = LICENSE_TIERS.find(lt => lt.id === requiredLicenseId);
+    const currentLP  = (driver.licensePoints || {})[requiredLicenseId] || 0;
+    const needed     = licenseDef ? licenseDef.pointsRequired - currentLP : '?';
+    return { ok: false, msg: `${driver.name} doesn't hold a ${requiredLicenseId} license yet — ${needed} more LP needed.` };
+  }
 
   // Unassign from previous car
   if (driver.carId) {
@@ -734,6 +745,28 @@ function _migratePrestige() {
   _migrateDriverAge();
 }
 
+// Ensure all drivers have license data (for saves created before the license system)
+function _migrateDriverLicenses() {
+  if (G.licensePtMultiplier === undefined) G.licensePtMultiplier = LICENSE_CONFIG.defaultMultiplier;
+  G.drivers.forEach(d => {
+    if (!d.licenses) d.licenses = ['GT4'];
+    if (!d.licensePoints) d.licensePoints = {};
+    // Ensure every license tier has an entry
+    LICENSE_TIERS.forEach(lt => {
+      if (d.licensePoints[lt.id] === undefined) {
+        // If the driver already holds this license (from the licenses array), set to threshold
+        d.licensePoints[lt.id] = d.licenses.includes(lt.id) ? lt.pointsRequired : 0;
+      }
+    });
+    // Retroactively grant licenses where LP already meets the threshold
+    LICENSE_TIERS.forEach(lt => {
+      if ((d.licensePoints[lt.id] || 0) >= lt.pointsRequired && !d.licenses.includes(lt.id)) {
+        d.licenses.push(lt.id);
+      }
+    });
+  });
+}
+
 // If a save has single-seater cars already (from before pathway gating), treat as unlocked
 function _migrateSingleSeater() {
   const SINGLE_SEATER_IDS = ['F4', 'F3', 'F2', 'F1'];
@@ -760,6 +793,72 @@ function canEndSeason() {
   return G.completedChampionships.some(c => c.season === G.season);
 }
 
+// Driver and class for a completed championship. Records from before driverId was
+// stored fall back to the car's current driver.
+function _champDriverAndClass(comp) {
+  const car = G.cars.find(c => c.id === comp.carId);
+  if (comp.driverId !== undefined) {
+    return { driverId: comp.driverId, classId: comp.classId || (car && car.classId) };
+  }
+  return { driverId: car ? car.driverId : null, classId: car ? car.classId : null };
+}
+
+// Compute and award License Points to all drivers at season end.
+// Returns { driverId: { licenseId: pointsEarned, ... }, ... }
+function _awardSeasonLP() {
+  const lpByDriver = {};
+
+  // Determine each driver's highest-tier class raced this season (by who completed each championship)
+  const driverHighest = {};
+  G.completedChampionships
+    .filter(c => c.season === G.season)
+    .forEach(comp => {
+      const { driverId, classId } = _champDriverAndClass(comp);
+      if (!driverId) return;
+      const cls = getCarClassById(classId);
+      if (!cls) return;
+      const prev = driverHighest[driverId];
+      const prevCls = prev ? getCarClassById(prev.classId) : null;
+      if (!prevCls || cls.tier > prevCls.tier) {
+        driverHighest[driverId] = { classId, carId: comp.carId };
+      }
+    });
+
+  // Award LP and grant licenses for each qualifying driver
+  Object.entries(driverHighest).forEach(([driverId, { classId, carId }]) => {
+    const driver = G.drivers.find(d => d.id === driverId);
+    if (!driver) return;
+
+    const lpTable    = LP_EARN_TABLE[classId] || {};
+    const globalMult = G.licensePtMultiplier || 1.0;
+    const coachMult  = 1 + getREBonuses(carId).coachBonus;
+    const totalMult  = globalMult * coachMult;
+
+    const earned = {};
+    Object.entries(lpTable).forEach(([licenseId, baseLP]) => {
+      const pts = Math.round(baseLP * totalMult);
+      if (pts <= 0) return;
+      if (!driver.licensePoints) driver.licensePoints = {};
+      driver.licensePoints[licenseId] = (driver.licensePoints[licenseId] || 0) + pts;
+      earned[licenseId] = pts;
+
+      // Grant license if threshold reached
+      const licenseDef = LICENSE_TIERS.find(lt => lt.id === licenseId);
+      if (licenseDef && driver.licensePoints[licenseId] >= licenseDef.pointsRequired) {
+        if (!driver.licenses) driver.licenses = ['GT4'];
+        if (!driver.licenses.includes(licenseId)) {
+          driver.licenses.push(licenseId);
+          addNotification(`🏆 ${driver.name} has earned their ${licenseDef.name} License!`, 'success');
+        }
+      }
+    });
+
+    lpByDriver[driverId] = earned;
+  });
+
+  return lpByDriver;
+}
+
 function endSeason() {
   if (!canEndSeason()) return { ok: false, msg: 'Complete at least one championship first.' };
 
@@ -769,7 +868,10 @@ function endSeason() {
   // 2. Deduct staff salaries
   deductSeasonSalaries();
 
-  // 3. Age all drivers, apply career stat changes, handle retirements
+  // 3. Award LP to drivers (before aging so retired drivers still receive their LP)
+  const lpByDriver = _awardSeasonLP();
+
+  // 4. Age all drivers, apply career stat changes, handle retirements
   // Snapshot stats before changes so we can return a diff for the UI
   const snapshots = G.drivers.map(d => ({
     id: d.id, name: d.name,
@@ -788,16 +890,17 @@ function endSeason() {
   // Build driver change records before retirements remove drivers
   const driverChanges = snapshots.map(snap => {
     const d = G.drivers.find(x => x.id === snap.id);
-    const ageAfter = snap.ageBefore + 1;
+    const ageAfter  = snap.ageBefore + 1;
+    const lpGained  = lpByDriver[snap.id] || {};
     if (!d || retirees.includes(snap.id)) {
-      return { name: snap.name, ageBefore: snap.ageBefore, ageAfter, retired: true, changes: {} };
+      return { name: snap.name, ageBefore: snap.ageBefore, ageAfter, retired: true, changes: {}, lpGained };
     }
     const changes = {};
     DRIVER_STAT_KEYS.forEach(k => {
       const diff = d[k] - snap.statsBefore[k];
       if (diff !== 0) changes[k] = diff;
     });
-    return { name: snap.name, ageBefore: snap.ageBefore, ageAfter, stage: getCareerStage(ageAfter), retired: false, changes };
+    return { name: snap.name, ageBefore: snap.ageBefore, ageAfter, stage: getCareerStage(ageAfter), retired: false, changes, lpGained };
   });
 
   // Auto-retire queued drivers
@@ -813,25 +916,23 @@ function endSeason() {
     G.drivers.splice(G.drivers.findIndex(x => x.id === driverId), 1);
   });
 
-  // 4. Award license XP to drivers based on championships completed this season
+  // 5. Award XP (per championship completion; separate from LP)
   G.completedChampionships
     .filter(c => c.season === G.season)
     .forEach(comp => {
-      const car = G.cars.find(c => c.id === comp.carId);
-      if (car && car.driverId) {
-        const driver = G.drivers.find(d => d.id === car.driverId);
-        if (driver) driver.xp += 100;
-      }
+      const { driverId } = _champDriverAndClass(comp);
+      const driver = driverId && G.drivers.find(d => d.id === driverId);
+      if (driver) driver.xp += 100;
     });
 
-  // 5. Abandon all in-progress championships
+  // 6. Abandon all in-progress championships
   G.activeChampionships.forEach(entry => {
     const car = G.cars.find(c => c.id === entry.carId);
     if (car) car.championshipId = null;
   });
   G.activeChampionships = [];
 
-  // 6 & 7. Increment season
+  // 7. Increment season
   G.season++;
   G.seasonEndCount = (G.seasonEndCount || 0) + 1;
 
@@ -951,6 +1052,8 @@ function tick(deltaMs) {
         G.completedChampionships.push({
           definitionId: entry.definitionId,
           carId: entry.carId,
+          driverId: car ? car.driverId : null,
+          classId: car ? car.classId : null,
           repEarned: entry.repEarned,
           incomeEarned: entry.incomeEarned,
           season: G.season,
@@ -1009,6 +1112,8 @@ function applyOfflineProgress() {
       G.completedChampionships.push({
         definitionId: entry.definitionId,
         carId: entry.carId,
+        driverId: car ? car.driverId : null,
+        classId: car ? car.classId : null,
         repEarned: entry.repEarned,
         season: G.season,
         completedAt: Date.now(),
@@ -1046,6 +1151,7 @@ function loadGame() {
     _migrateStaff();
     _migratePrestige();
     _migrateSingleSeater();
+    _migrateDriverLicenses();
     return true;
   } catch (e) {
     console.warn('Load failed:', e);

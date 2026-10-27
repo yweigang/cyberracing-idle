@@ -145,6 +145,53 @@ const CAR_CLASSES = [
   },
 ];
 
+// ─── Driver Licenses ──────────────────────────────────────────────────────────
+
+// All license tiers in progression order (within each pathway)
+const LICENSE_TIERS = [
+  { id: 'GT4',      name: 'GT4',      pointsRequired: 30,  pathway: 'gt_endurance'  },
+  { id: 'GT3',      name: 'GT3',      pointsRequired: 50,  pathway: 'gt_endurance'  },
+  { id: 'LMP3',     name: 'LMP3',     pointsRequired: 100, pathway: 'gt_endurance'  },
+  { id: 'LMP2',     name: 'LMP2',     pointsRequired: 150, pathway: 'gt_endurance'  },
+  { id: 'HYPERCAR', name: 'Hypercar', pointsRequired: 200, pathway: 'gt_endurance'  },
+  { id: 'F4',       name: 'F4',       pointsRequired: 30,  pathway: 'single_seater' },
+  { id: 'F1',       name: 'F1',       pointsRequired: 300, pathway: 'single_seater' },
+];
+
+// Which license a driver must hold to be assigned to a given car class
+const CLASS_LICENSE_REQUIREMENT = {
+  GT4:     'GT4',
+  GT3:     'GT3',
+  LMP3:    'LMP3',
+  LMP2:    'LMP2',
+  HYPERCAR:'HYPERCAR',
+  F4:      'F4',
+  F3:      'F4',   // F3/F2 use F4 license — no separate tier defined
+  F2:      'F4',
+  F1:      'F1',
+};
+
+// LP earned per season toward each license, keyed by the class the driver raced in.
+// "—" cells in the spec (already qualified) are simply absent from each row.
+const LP_EARN_TABLE = {
+  KARTING: { F4: 10, GT4: 5,  GT3: 2,  LMP3: 1,  LMP2: 1,  HYPERCAR: 1,  F1: 1  },
+  F4:      {         GT4: 15, GT3: 8,  LMP3: 3,  LMP2: 2,  HYPERCAR: 1,  F1: 1  },
+  GT4:     {                  GT3: 25, LMP3: 10, LMP2: 6,  HYPERCAR: 4,  F1: 2  },
+  GT3:     {                           LMP3: 25, LMP2: 14, HYPERCAR: 9,  F1: 5  },
+  LMP3:    {                                     LMP2: 30, HYPERCAR: 20, F1: 12 },
+  LMP2:    {                                               HYPERCAR: 30, F1: 20 },
+  HYPERCAR:{                                                              F1: 30 },
+  // F3/F2 not in original spec — values are estimates, adjust as needed
+  F3:      {                           LMP3: 20, LMP2: 10, HYPERCAR: 6,  F1: 15 },
+  F2:      {                                     LMP2: 25, HYPERCAR: 15, F1: 25 },
+};
+
+// Global LP multiplier config — wire prestige scaling here when values are finalised
+const LICENSE_CONFIG = {
+  defaultMultiplier: 1.0,
+  // prestigeMultipliers: { 0: 1.0, 1: 1.5, 2: 2.0, 3: 3.0 },  // TBD
+};
+
 // ─── Upgrades ─────────────────────────────────────────────────────────────────
 
 const UPGRADES = {
@@ -665,7 +712,7 @@ const RE_STAT_DESCS = {
   setupMastery:           'Boosts all upgrade multipliers on this car',
   reliabilityEngineering: 'Boosts reliability multiplier on this car',
   pitWallStrategy:        'Increases championship income bonus for this car',
-  driverCoach:            'Increases assigned driver XP gain',
+  driverCoach:            'Increases assigned driver XP and License Point gain',
   dataAnalysis:           'Boosts championship final payout bonus',
 };
 
