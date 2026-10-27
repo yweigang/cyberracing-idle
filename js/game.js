@@ -1331,36 +1331,29 @@ function fireTP() {
 
 function hireRE(carId, staffData) {
   if (!G.raceEngineers) G.raceEngineers = {};
-  if (G.raceEngineers[carId]) {
-    const existingTierDef = RE_TIERS[G.raceEngineers[carId].tier];
-    const buyout = Math.floor(existingTierDef.hireCost * 0.25);
-    if (G.money < buyout) return { ok: false, msg: `Buying out current RE costs $${formatNumber(buyout)}.` };
-    G.money -= buyout;
-    addNotification(`Bought out ${G.raceEngineers[carId].name} for $${formatNumber(buyout)}.`, 'info');
-  }
   const tierDef = RE_TIERS[staffData.tier];
   if (tierDef.hireCost > 0) {
     if (G.money < tierDef.hireCost) return { ok: false, msg: 'Not enough money.' };
     G.money -= tierDef.hireCost;
   }
+  // The engineer being replaced moves to the spare list
+  _releaseCarEngineer(carId);
   G.raceEngineers[carId] = { ...staffData };
   const car = G.cars.find(c => c.id === carId);
   addNotification(`Hired ${staffData.name} as Race Engineer for ${car ? car.name : carId}.`, 'success');
   return { ok: true };
 }
 
-// A car leaves the team: a paid engineer moves to the spare list, a free one leaves
+// Takes a car's engineer off it; they stay with the team as a spare
 function _releaseCarEngineer(carId) {
   const re = getREForCar(carId);
   if (!re) return;
   delete G.raceEngineers[carId];
-  if (re.salary > 0) {
-    G.spareEngineers.push(re);
-    addNotification(`${re.name} stays with the team as a spare race engineer: assign them to a car in the Staff tab.`, 'info');
-  }
+  G.spareEngineers.push(re);
+  addNotification(`${re.name} stays with the team as a spare race engineer: assign them to a car in the Staff tab.`, 'info');
 }
 
-// Puts a spare engineer on a car; a paid engineer already on it becomes the spare
+// Puts a spare engineer on a car; the engineer already on it becomes a spare
 function assignSpareEngineer(index, carId) {
   const re = G.spareEngineers[index];
   if (!re) return { ok: false, msg: 'No such spare engineer.' };

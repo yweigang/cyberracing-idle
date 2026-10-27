@@ -5,12 +5,12 @@
 let _activeTab = 'garage';
 let _uiInterval = null;
 let _lastNotifCount = 0;
-let _selectedCarForChamp = null;
 let _signingSlotIndex = null;  // 0–4 or null
 let _hiringTP = false;
 let _tpCandidates = [];
 let _hiringRECarId = null;     // carId being hired for, or null
 let _reCandidates = [];
+const _champCarChoice = {};    // championship id → car picked on its card
 let _confirmingReset = false;
 
 // ─── Tab Navigation ───────────────────────────────────────────────────────────
@@ -338,7 +338,7 @@ function _confirmSellCar(carId) {
     lineup.length ? `${lineup.map(d => d.name).join(', ')} ${lineup.length > 1 ? 'go' : 'goes'} back to the driver roster.` : '',
     entry ? `<span class="dialog-warn">${car.name} is racing in ${getChampionshipById(entry.definitionId).name}: that championship is abandoned and its entry fee is lost.</span>` : '',
     reg ? `Its registration for ${getChampionshipById(reg.definitionId).name} next season is cancelled and refunded.` : '',
-    re ? (re.salary > 0 ? `Race engineer ${re.name} stays as a spare engineer for another car.` : `<span class="dialog-warn">Race engineer ${re.name} leaves the team.</span>`) : '',
+    re ? `Race engineer ${re.name} stays as a spare engineer for another car.` : '',
     G.cars.length === 1 ? `<span class="dialog-warn">This is your last car. You'll need to buy a new one to keep racing.</span>` : '',
   ].filter(Boolean);
   showConfirmDialog({
@@ -684,23 +684,6 @@ function renderChampionships() {
   // Available championships
   let availHtml = '<div class="section-header">ENTER CHAMPIONSHIP</div>';
 
-  // Car selector
-  availHtml += `
-    <div class="champ-car-selector">
-      <label>Select Car:</label>
-      <select id="champ-car-select">
-        <option value="">— choose —</option>
-        ${G.cars.map(c => {
-          const inChamp = c.championshipId !== null;
-          const noDriver = !c.driverId;
-          const reg = getRegistration(c.id);
-          return `<option value="${c.id}" ${noDriver ? 'disabled' : ''} ${c.id === _selectedCarForChamp ? 'selected' : ''}>
-            ${c.name} · ★ ${Math.round(calcCarRating(c))}${noDriver ? ' (no driver)' : inChamp ? ' (racing: can register for next season)' : ''}${reg ? ' · registered' : ''}
-          </option>`;
-        }).join('')}
-      </select>
-    </div>`;
-
   availHtml += '<div class="champ-grid">';
   CHAMPIONSHIPS.forEach(champDef => {
     if (champDef.pathway === 'single_seater' && !isSingleSeaterUnlocked()) return;
@@ -709,24 +692,19 @@ function renderChampionships() {
     const hardLocked = !repOk || !prereqOk;
     const timeOk     = fitsInSeason(champDef);
     const completions = G.champCompletions[champDef.id] || 0;
-    const selCar = _selectedCarForChamp ? G.cars.find(c => c.id === _selectedCarForChamp) : null;
-    const selFits = selCar && champDef.allowedClasses.includes(selCar.classId);
-    const feeClass = selFits ? selCar.classId : champDef.allowedClasses[0];
-    const fee = getEntryFee(champDef, selFits ? selCar : null, feeClass);
-    const renewal = selFits && hasSeriesSlot(selCar, champDef);
+    // Cars of an allowed class; the card describes the picked one (default: the best free car)
+    const eligibleCars = G.cars.filter(c => champDef.allowedClasses.includes(c.classId));
+    const selCar = _pickChampCar(champDef, eligibleCars);
+    const feeClass = selCar ? selCar.classId : champDef.allowedClasses[0];
+    const fee = getEntryFee(champDef, selCar, feeClass);
+    const renewal = selCar && hasSeriesSlot(selCar, champDef);
     const canAfford  = G.money >= fee;
-    const selBusy = !!(selCar && selCar.championshipId);
-    const canEnter   = !hardLocked && canAfford && timeOk && !selBusy;
-    // Next-season registration: offered when this season can't take the selected car
-    const selReg = selCar ? getRegistration(selCar.id) : null;
-    const offerRegister = !hardLocked && selFits && (!timeOk || selBusy);
-    const canRegister = offerRegister && !selReg && canAfford;
-    const fieldClass = selFits ? selCar.classId : champDef.allowedClasses[0];
+    const fieldClass = feeClass;
     const fieldStr = getFieldStrength(champDef, fieldClass);
     const p1Prize = getRoundPrize(champDef, fieldClass);
     const lineupSize = getLineupSize(champDef);
-    const selRating = selFits ? Math.round(calcCarRating(selCar, champDef.format, false, lineupSize)) : null;
-    const selMissing = selFits ? getMissingDrivers(selCar, lineupSize) : 0;
+    const selRating = selCar ? Math.round(calcCarRating(selCar, champDef.format, false, lineupSize)) : null;
+    const selMissing = selCar ? getMissingDrivers(selCar, lineupSize) : 0;
     const best = G.completedChampionships.filter(c => c.definitionId === champDef.id && c.finalPosition)
       .reduce((m, c) => Math.min(m, c.finalPosition), Infinity);
 
@@ -766,14 +744,7 @@ function renderChampionships() {
             : `${feeClass} first entry $${formatNumber(getClassEntryFee(champDef, feeClass))} · renewals $${formatNumber(getRenewalFee(champDef, feeClass))}`}</span>
         </div>
         ${lockReasons.length > 0 ? `<div class="champ-lock-reasons">${lockReasons.join('')}</div>` : ''}
-        ${offerRegister
-          ? `<button class="btn register-champ-btn" data-champ="${champDef.id}" ${canRegister ? '' : 'disabled'}>
-              ${selReg ? (selReg.definitionId === champDef.id ? '✓ Registered for next season' : `Already registered for ${getChampionshipById(selReg.definitionId).shortName}`) : `📅 Register for next season — $${formatNumber(fee)}`}
-            </button>`
-          : `<button class="btn enter-champ-btn ${canEnter ? '' : 'disabled'}"
-              data-champ="${champDef.id}" ${canEnter ? '' : 'disabled'}>
-              Enter — $${formatNumber(fee)}
-            </button>`}
+        ${hardLocked ? '' : _renderChampCarActions(champDef, eligibleCars, selCar, timeOk)}
       </div>`;
   });
   availHtml += '</div>';
@@ -781,18 +752,16 @@ function renderChampionships() {
   container.innerHTML = activeHtml + availHtml;
 
   // Bind events
-  container.querySelector('#champ-car-select').addEventListener('change', e => {
-    _selectedCarForChamp = e.target.value || null;
-    renderChampionships();
+  container.querySelectorAll('.champ-car-pick').forEach(sel => {
+    sel.addEventListener('change', () => {
+      _champCarChoice[sel.dataset.champ] = sel.value;
+      renderChampionships();
+    });
   });
 
   container.querySelectorAll('.enter-champ-btn').forEach(btn => {
     btn.addEventListener('click', () => {
-      if (!_selectedCarForChamp) {
-        addNotification('Select a car first.', 'error');
-        return;
-      }
-      const result = enterChampionship(btn.dataset.champ, _selectedCarForChamp);
+      const result = enterChampionship(btn.dataset.champ, btn.dataset.car);
       if (!result.ok) addNotification(result.msg, 'error');
       else addNotification('Entered championship!', 'success');
       renderChampionships();
@@ -801,7 +770,7 @@ function renderChampionships() {
 
   container.querySelectorAll('.register-champ-btn').forEach(btn => {
     btn.addEventListener('click', () => {
-      const result = registerForNextSeason(btn.dataset.champ, _selectedCarForChamp);
+      const result = registerForNextSeason(btn.dataset.champ, btn.dataset.car);
       if (!result.ok) addNotification(result.msg, 'error');
       else addNotification('Registered for next season. It starts when the new season begins.', 'success');
       renderChampionships();
@@ -831,6 +800,43 @@ function renderChampionships() {
       renderChampionships();
     });
   });
+}
+
+// The car a championship card shows: the player's pick, else the best car that can enter now
+function _pickChampCar(champDef, cars) {
+  const picked = cars.find(c => c.id === _champCarChoice[champDef.id]);
+  if (picked) return picked;
+  const lineupSize = getLineupSize(champDef);
+  const rated = car => calcCarRating(car, champDef.format, false, lineupSize);
+  const ready = cars.filter(c => c.driverId && !c.championshipId && !getRegistration(c.id));
+  return [...(ready.length ? ready : cars)].sort((a, b) => rated(b) - rated(a))[0] || null;
+}
+
+// Car picker plus one action: enter now, or register for next season when the car
+// is busy or the series no longer fits this season
+function _renderChampCarActions(champDef, cars, car, timeOk) {
+  if (!car) return `<div class="champ-no-car">No ${champDef.allowedClasses.join(' / ')} car in your garage</div>`;
+  const lineupSize = getLineupSize(champDef);
+  const status = c => {
+    const reg = getRegistration(c.id);
+    if (!c.driverId) return ' (no driver)';
+    if (c.championshipId) return ' (racing)';
+    return reg ? ' (registered)' : '';
+  };
+  const picker = cars.length > 1
+    ? `<select class="champ-car-pick" data-champ="${champDef.id}">${cars.map(c =>
+        `<option value="${c.id}" ${c.id === car.id ? 'selected' : ''}>${c.name} · ★ ${Math.round(calcCarRating(c, champDef.format, false, lineupSize))}${status(c)}</option>`).join('')}</select>`
+    : `<span class="champ-car-label">${car.name} · ★ ${Math.round(calcCarRating(car, champDef.format, false, lineupSize))}</span>`;
+  const fee = getEntryFee(champDef, car, car.classId);
+  const reg = getRegistration(car.id);
+  const entry = car.championshipId && G.activeChampionships.find(e => e.id === car.championshipId);
+  let action;
+  if (!car.driverId) action = `<span class="champ-car-note">no driver</span>`;
+  else if (reg) action = `<span class="champ-car-note">${reg.definitionId === champDef.id ? '✓ registered for next season' : `registered for ${getChampionshipById(reg.definitionId).shortName}`}</span>`;
+  else if (entry || !timeOk) action = `<button class="btn register-champ-btn" data-champ="${champDef.id}" data-car="${car.id}" ${G.money >= fee ? '' : 'disabled'}
+      title="${entry ? `Racing ${getChampionshipById(entry.definitionId).shortName} this season` : 'Does not fit in this season'}">📅 Next season — $${formatNumber(fee)}</button>`;
+  else action = `<button class="btn enter-champ-btn" data-champ="${champDef.id}" data-car="${car.id}" ${G.money >= fee ? '' : 'disabled'}>Enter — $${formatNumber(fee)}</button>`;
+  return `<div class="champ-car-row">${picker}${action}</div>`;
 }
 
 function renderLastRound(entry) {
@@ -1483,7 +1489,6 @@ function renderStaff() {
         </div>`;
       } else {
         const reTierDef = RE_TIERS[re.tier];
-        const buyout = Math.floor(reTierDef.hireCost * 0.25);
         const statsHtml = _renderStaffStatBlock(re, RE_STAT_KEYS, RE_STAT_LABELS);
         const reB = getREBonuses(car.id);
         html += `
@@ -1505,7 +1510,7 @@ function renderStaff() {
             </div>
             <div class="staff-card-actions">
               <button class="btn btn-danger fire-re-btn" data-car="${car.id}">Fire</button>
-              <button class="btn hire-re-btn" data-car="${car.id}">${buyout > 0 ? 'Replace ($' + formatNumber(buyout) + ')' : 'Replace'}</button>
+              <button class="btn hire-re-btn" data-car="${car.id}">Replace</button>
             </div>
           </div>`;
       }

@@ -4,6 +4,15 @@
 
 const CHANGELOG = [
   {
+    version: '0.5.5',
+    date: '2026-10-27',
+    title: 'Championship cards and engineers',
+    changes: [
+      'Each championship card picks your best free car for it, with a dropdown when more than one car fits. Enter or register for next season right on the card; the car selector at the top is gone.',
+      'Every race engineer now stays with the team when their car is sold or replaced, Amateurs included. Replacing an engineer no longer costs a buyout: the old one becomes a spare.',
+    ],
+  },
+  {
     version: '0.5.4',
     date: '2026-10-27',
     title: 'Spare engineers',

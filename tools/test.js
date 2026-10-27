@@ -87,6 +87,11 @@ test('Selling a car keeps its paid race engineer as a spare for another car', ()
   const other = g.run('G.cars[0].id');
   assert(g.run(`assignSpareEngineer(0, '${other}').ok`) && g.run(`getREForCar('${other}').name`) === name, 'spare assigned');
   assert(g.run('G.spareEngineers.length') === 0, 'spare list emptied');
+  // Replacing an engineer, even a free amateur, keeps the old one as a spare
+  g.run(`hireRE('${other}', generateREOptions().find(o => o.tier === 'amateur'))`);
+  assert(g.run('G.spareEngineers.length') === 1 && g.run('G.spareEngineers[0].name') === name, 'replaced engineer becomes a spare');
+  g.run(`G.raceEngineers = {}; hireRE('${other}', generateREOptions().find(o => o.tier === 'amateur')); sellCar('${other}')`);
+  assert(g.run(`G.spareEngineers.some(s => s.tier === 'amateur')`), 'free engineers stay too');
 });
 
 test('Save/load round-trips and migrates drivers without license data', () => {
