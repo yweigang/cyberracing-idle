@@ -37,6 +37,7 @@ function createDefaultState() {
     ],
     drivers: [],
     activeChampionships: [],
+    registrations: [],         // entries for next season: { id, definitionId, carId, fee }
     completedChampionships: [],
     champCompletions: {},      // { champId: totalCount } — persists across season resets
     seasonEndCount: 0,         // increments each time endSeason() is called
@@ -368,6 +369,7 @@ function sellCar(carId) {
   const value = getCarSellValue(car);
   getCarLineup(car).forEach(d => { d.carId = null; });
   if (G.raceEngineers && G.raceEngineers[carId]) delete G.raceEngineers[carId];
+  if (getRegistration(carId)) cancelRegistration(carId);
   G.cars.splice(idx, 1);
   G.money += value;
   addNotification(`Sold ${car.name} for $${formatNumber(value)}.`, 'info');
@@ -430,32 +432,31 @@ function fitsInSeason(champDef, at = Date.now()) {
   return getChampionshipDuration(champDef) <= getSeasonTimeLeft(at);
 }
 
-function enterChampionship(definitionId, carId, at = Date.now()) {
-  const champDef = getChampionshipById(definitionId);
-  if (!champDef) return { ok: false, msg: 'Unknown championship.' };
-
+// Rule checks shared by entering now and registering for next season.
+// Returns an error message, or null when the car may enter.
+function _entryProblem(champDef, car) {
+  if (!champDef) return 'Unknown championship.';
   if (champDef.pathway === 'single_seater' && !isSingleSeaterUnlocked())
-    return { ok: false, msg: 'Single-Seater Pathway not yet unlocked.' };
-
+    return 'Single-Seater Pathway not yet unlocked.';
   if (G.reputation < (champDef.repRequired || 0))
-    return { ok: false, msg: `Need ${formatNumber(champDef.repRequired)} REP to enter.` };
+    return `Need ${formatNumber(champDef.repRequired)} REP to enter.`;
+  if (!checkChampionshipPrerequisite(champDef)) return `Complete ${getPrerequisiteLabel(champDef)} first.`;
+  if (!car) return 'Car not found.';
+  if (!champDef.allowedClasses.includes(car.classId)) return `${car.name} cannot enter this series.`;
+  if (!car.driverId) return 'Assign a driver first.';
+  return null;
+}
 
-  if (!checkChampionshipPrerequisite(champDef)) {
-    const label = getPrerequisiteLabel(champDef);
-    return { ok: false, msg: `Complete ${label} first.` };
-  }
-
+function enterChampionship(definitionId, carId, at = Date.now(), prepaid = false) {
+  const champDef = getChampionshipById(definitionId);
   const car = G.cars.find(c => c.id === carId);
-  if (!car) return { ok: false, msg: 'Car not found.' };
-  if (!champDef.allowedClasses.includes(car.classId))
-    return { ok: false, msg: `${car.name} cannot enter this series.` };
-
+  const problem = _entryProblem(champDef, car);
+  if (problem) return { ok: false, msg: problem };
   if (car.championshipId !== null) return { ok: false, msg: 'Car already in a championship.' };
-  if (!car.driverId) return { ok: false, msg: 'Assign a driver first.' };
   if (!fitsInSeason(champDef, at)) return { ok: false, msg: 'Not enough time left this season.' };
-  if (G.money < champDef.entryFee) return { ok: false, msg: 'Not enough money for entry fee.' };
+  if (!prepaid && G.money < champDef.entryFee) return { ok: false, msg: 'Not enough money for entry fee.' };
 
-  G.money -= champDef.entryFee;
+  if (!prepaid) G.money -= champDef.entryFee;
 
   const entry = {
     id: 'champ_entry_' + _champIdCounter++,
@@ -499,6 +500,69 @@ function setAutoRenew(carId, on) {
   const entry = G.activeChampionships.find(e => e.id === car.championshipId);
   car.autoRenew = on ? (entry ? entry.definitionId : car.autoRenew) : null;
   return { ok: true };
+}
+
+// ─── Next-Season Registration ─────────────────────────────────────────────────
+
+function getRegistration(carId) {
+  return (G.registrations || []).find(r => r.carId === carId) || null;
+}
+
+// Books a car into a series for next season. The entry fee is paid now and the
+// championship starts when the new season begins. The car may still be racing.
+function registerForNextSeason(definitionId, carId) {
+  const champDef = getChampionshipById(definitionId);
+  const car = G.cars.find(c => c.id === carId);
+  const problem = _entryProblem(champDef, car);
+  if (problem) return { ok: false, msg: problem };
+  if (getRegistration(carId)) return { ok: false, msg: `${car.name} is already registered for next season.` };
+  if (G.money < champDef.entryFee) return { ok: false, msg: 'Not enough money for entry fee.' };
+  G.money -= champDef.entryFee;
+  G.registrations.push({ id: 'reg_' + _champIdCounter++, definitionId, carId, fee: champDef.entryFee });
+  return { ok: true };
+}
+
+function cancelRegistration(carId) {
+  const reg = getRegistration(carId);
+  if (!reg) return { ok: false, msg: 'Not registered.' };
+  G.money += reg.fee;
+  G.registrations = G.registrations.filter(r => r !== reg);
+  return { ok: true };
+}
+
+// Starts registered championships at the start of a season; refunds any that can't start
+function _activateRegistrations(at) {
+  const regs = G.registrations || [];
+  G.registrations = [];
+  regs.forEach(reg => {
+    const champDef = getChampionshipById(reg.definitionId);
+    const car = G.cars.find(c => c.id === reg.carId);
+    const res = enterChampionship(reg.definitionId, reg.carId, at, true);
+    if (res.ok) {
+      _notify(`${car.name} starts ${champDef.name}.`, 'info');
+    } else {
+      G.money += reg.fee;
+      _notify(`${car ? car.name : 'A car'} could not start ${champDef ? champDef.name : 'its series'} (${res.msg}). Entry fee refunded.`, 'error');
+    }
+  });
+}
+
+// ─── Early Season End ─────────────────────────────────────────────────────────
+
+// The season can end early once nothing is racing and every series some car could
+// enter is too long for the time left. Money is ignored, so being short on cash
+// never fast-forwards seasons.
+function canEndSeasonEarly(at = Date.now()) {
+  if (G.activeChampionships.length > 0) return false;
+  let anyEligible = false;
+  for (const car of G.cars) {
+    for (const champDef of CHAMPIONSHIPS) {
+      if (_entryProblem(champDef, car)) continue;
+      anyEligible = true;
+      if (fitsInSeason(champDef, at)) return false;
+    }
+  }
+  return anyEligible;
 }
 
 // ─── Race Engine ──────────────────────────────────────────────────────────────
@@ -1359,7 +1423,8 @@ function _seasonLPByDriver(season) {
   return byDriver;
 }
 
-function endSeason() {
+// endedAt: when the season actually ended (earlier than scheduled for an early end)
+function endSeason(endedAt = getSeasonEndTime()) {
   const endedSeason = G.season;
   const seasonResults = G.completedChampionships
     .filter(c => c.season === endedSeason)
@@ -1444,7 +1509,7 @@ function endSeason() {
   G.season++;
   G.seasonEndCount = (G.seasonEndCount || 0) + 1;
 
-  G.seasonStartTime = getSeasonEndTime();
+  G.seasonStartTime = endedAt;
 
   G.lastSeasonSummary = { season: endedSeason, driverChanges, results: seasonResults };
   addNotification(`Season ${endedSeason} ended. Season ${G.season} begins!`, 'success');
@@ -1562,6 +1627,7 @@ function doPrestige() {
   // Sponsor contracts end; a fresh set of offers is waiting
   G.sponsors = [null, null, null, null, null];
   G.sponsorOffers = null;
+  G.registrations = [];
 
   // HQ facilities are rebuilt each run (their levels were paid out as PP)
   G.hq = { simulator: 0, composites: 0, hospitality: 0 };
@@ -1635,10 +1701,19 @@ function advanceWorld(now) {
   G.cars.forEach(car => _tryAutoRenew(car, now, true));
 
   if (now >= getSeasonEndTime()) {
-    endSeason();
-    G.cars.forEach(car => _tryAutoRenew(car, G.seasonStartTime));
+    _startNextSeason(getSeasonEndTime());
     if (now >= getSeasonEndTime()) advanceWorld(now);   // more than one season elapsed
+  } else if (canEndSeasonEarly(now)) {
+    _notify(`Nothing left to race in season ${G.season}: it ends early.`, 'info');
+    _startNextSeason(now);
   }
+}
+
+// Ends the season at `at` and starts the next one: registrations first, then auto-renew
+function _startNextSeason(at) {
+  endSeason(at);
+  _activateRegistrations(G.seasonStartTime);
+  G.cars.forEach(car => _tryAutoRenew(car, G.seasonStartTime));
 }
 
 function _tryAutoRenew(car, at, quiet = false) {

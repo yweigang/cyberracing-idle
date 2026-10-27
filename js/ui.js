@@ -489,6 +489,22 @@ function renderChampionships() {
     });
   }
 
+  // Registrations for next season
+  if ((G.registrations || []).length > 0) {
+    activeHtml += '<div class="section-header">NEXT SEASON</div><div class="next-season-list">';
+    G.registrations.forEach(reg => {
+      const champDef = getChampionshipById(reg.definitionId);
+      const car = G.cars.find(c => c.id === reg.carId);
+      activeHtml += `
+        <div class="next-season-row" style="--cls-color: ${champDef.color}">
+          <span class="next-season-champ" style="color: ${champDef.color}">${champDef.name}</span>
+          <span class="next-season-car">${car ? car.name : 'Unknown car'} · starts when season ${G.season + 1} begins · $${formatNumber(reg.fee)} paid</span>
+          <button class="btn cancel-reg-btn" data-car="${reg.carId}">Cancel (refund)</button>
+        </div>`;
+    });
+    activeHtml += '</div>';
+  }
+
   // Available championships
   let availHtml = '<div class="section-header">ENTER CHAMPIONSHIP</div>';
 
@@ -501,8 +517,9 @@ function renderChampionships() {
         ${G.cars.map(c => {
           const inChamp = c.championshipId !== null;
           const noDriver = !c.driverId;
-          return `<option value="${c.id}" ${inChamp || noDriver ? 'disabled' : ''} ${c.id === _selectedCarForChamp ? 'selected' : ''}>
-            ${c.name} · ★ ${Math.round(calcCarRating(c))}${inChamp ? ' (in championship)' : noDriver ? ' (no driver)' : ''}
+          const reg = getRegistration(c.id);
+          return `<option value="${c.id}" ${noDriver ? 'disabled' : ''} ${c.id === _selectedCarForChamp ? 'selected' : ''}>
+            ${c.name} · ★ ${Math.round(calcCarRating(c))}${noDriver ? ' (no driver)' : inChamp ? ' (racing: can register for next season)' : ''}${reg ? ' · registered' : ''}
           </option>`;
         }).join('')}
       </select>
@@ -516,10 +533,15 @@ function renderChampionships() {
     const hardLocked = !repOk || !prereqOk;
     const canAfford  = G.money >= champDef.entryFee;
     const timeOk     = fitsInSeason(champDef);
-    const canEnter   = !hardLocked && canAfford && timeOk;
     const completions = G.champCompletions[champDef.id] || 0;
     const selCar = _selectedCarForChamp ? G.cars.find(c => c.id === _selectedCarForChamp) : null;
     const selFits = selCar && champDef.allowedClasses.includes(selCar.classId);
+    const selBusy = !!(selCar && selCar.championshipId);
+    const canEnter   = !hardLocked && canAfford && timeOk && !selBusy;
+    // Next-season registration: offered when this season can't take the selected car
+    const selReg = selCar ? getRegistration(selCar.id) : null;
+    const offerRegister = !hardLocked && selFits && (!timeOk || selBusy);
+    const canRegister = offerRegister && !selReg && canAfford;
     const fieldClass = selFits ? selCar.classId : champDef.allowedClasses[0];
     const fieldStr = getFieldStrength(champDef, fieldClass);
     const p1Prize = getRoundPrize(champDef, fieldClass);
@@ -561,10 +583,14 @@ function renderChampionships() {
           <span>📈 P1 +${champDef.repPerRound} REP</span>
         </div>
         ${lockReasons.length > 0 ? `<div class="champ-lock-reasons">${lockReasons.join('')}</div>` : ''}
-        <button class="btn enter-champ-btn ${canEnter ? '' : 'disabled'}"
-          data-champ="${champDef.id}" ${canEnter ? '' : 'disabled'}>
-          Enter — $${formatNumber(champDef.entryFee)}
-        </button>
+        ${offerRegister
+          ? `<button class="btn register-champ-btn" data-champ="${champDef.id}" ${canRegister ? '' : 'disabled'}>
+              ${selReg ? (selReg.definitionId === champDef.id ? '✓ Registered for next season' : `Already registered for ${getChampionshipById(selReg.definitionId).shortName}`) : `📅 Register for next season — $${formatNumber(champDef.entryFee)}`}
+            </button>`
+          : `<button class="btn enter-champ-btn ${canEnter ? '' : 'disabled'}"
+              data-champ="${champDef.id}" ${canEnter ? '' : 'disabled'}>
+              Enter — $${formatNumber(champDef.entryFee)}
+            </button>`}
       </div>`;
   });
   availHtml += '</div>';
@@ -586,6 +612,23 @@ function renderChampionships() {
       const result = enterChampionship(btn.dataset.champ, _selectedCarForChamp);
       if (!result.ok) addNotification(result.msg, 'error');
       else addNotification('Entered championship!', 'success');
+      renderChampionships();
+    });
+  });
+
+  container.querySelectorAll('.register-champ-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const result = registerForNextSeason(btn.dataset.champ, _selectedCarForChamp);
+      if (!result.ok) addNotification(result.msg, 'error');
+      else addNotification('Registered for next season. It starts when the new season begins.', 'success');
+      renderChampionships();
+    });
+  });
+
+  container.querySelectorAll('.cancel-reg-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      cancelRegistration(btn.dataset.car);
+      addNotification('Registration cancelled, entry fee refunded.', 'info');
       renderChampionships();
     });
   });
@@ -1661,7 +1704,8 @@ function updateSeasonLive() {
 let _champRenderSig = '';
 function updateChampLive() {
   if (_activeTab !== 'championships') return;
-  const sig = G.activeChampionships.map(e => e.id + ':' + e.currentRound).join('|');
+  const sig = G.season + '#' + G.activeChampionships.map(e => e.id + ':' + e.currentRound).join('|')
+    + '#' + (G.registrations || []).map(r => r.id).join('|');
   if (sig !== _champRenderSig) { _champRenderSig = sig; renderChampionships(); return; }
 
   const now = Date.now();

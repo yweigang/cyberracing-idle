@@ -109,8 +109,7 @@ test('Completed championship records final position and pays standings bonus', (
 });
 
 test('Season ends automatically when the clock runs out', () => {
-  const { g, a, car } = setup();
-  g.run(`assignDriver('${a}', '${car}')`);
+  const { g } = setup();   // no driver seated, so nothing could race and the season runs its full length
   g.tickFor(SEASON_SEC(g) + 5, 5);
   assert(g.run('G.season') === 2, 'should be season 2, got ' + g.run('G.season'));
   assert(g.run('G.lastSeasonSummary.season') === 1, 'summary recorded');
@@ -120,8 +119,8 @@ test('Season ends automatically when the clock runs out', () => {
 test('Championships that would not finish before season end cannot be entered', () => {
   const { g, a, car } = setup();
   g.run(`assignDriver('${a}', '${car}')`);
-  g.tickFor(SEASON_SEC(g) - 5 * 60, 10);      // 5 minutes left, GT4 Cup needs 8
-  const r = g.run(`enterChampionship('gt4_regional', '${car}')`);
+  // 5 minutes left, GT4 Cup needs 8
+  const r = g.run(`enterChampionship('gt4_regional', '${car}', getSeasonEndTime() - 5 * 60 * 1000)`);
   assert(!r.ok && /time/.test(r.msg), 'should be rejected for time');
 });
 
@@ -429,6 +428,48 @@ test('Banked XP trains drivers at season end', () => {
   const after = g.run(`DRIVER_STAT_KEYS.reduce((s, k) => s + G.drivers.find(d => d.id === '${a}')[k], 0)`);
   assert(after - before >= 3, `3 stat points trained (${before} -> ${after})`);
   assert(d.xp === 50, 'leftover XP kept, got ' + d.xp);
+});
+
+test('The season ends early once nothing races and nothing fits', () => {
+  const { g, a, car } = setup();
+  g.run(`assignDriver('${a}', '${car}')`);
+  const start = g.run('G.seasonStartTime');
+  const cup = g.run("getChampionshipDuration(getChampionshipById('gt4_regional'))");
+  g.tickFor(SEASON_SEC(g) - cup - 30, 10);
+  assert(g.run('G.season') === 1, 'GT4 Cup still fits: season goes on');
+  g.tickFor(60, 5);
+  assert(g.run('G.season') === 2, 'ended early once the GT4 Cup no longer fits');
+  const ended = (g.run('G.seasonStartTime') - start) / 1000;
+  assert(ended < SEASON_SEC(g) - cup + 10, 'new season started right away, not at the scheduled end');
+});
+
+test('The season does not end early while a car is racing', () => {
+  const { g, a, car } = setup();
+  g.run(`assignDriver('${a}', '${car}'); enterChampionship('gt4_regional', '${car}'); setAutoRenew('${car}', false)`);
+  g.tickFor(60, 5);
+  assert(g.run('G.season') === 1 && g.run('G.activeChampionships.length') === 1, 'still racing in season 1');
+});
+
+test('Registering for next season pays now and starts at the season change', () => {
+  const { g, a, car } = setup();
+  g.run(`assignDriver('${a}', '${car}'); enterChampionship('gt4_regional', '${car}'); setAutoRenew('${car}', false)`);
+  const m = g.run('G.money');
+  assert(g.run(`registerForNextSeason('gt4_regional', '${car}').ok`), 'register while racing');
+  assert(m - g.run('G.money') === 5000, 'fee paid now');
+  assert(!g.run(`registerForNextSeason('gt4_regional', '${car}').ok`), 'one registration per car');
+  assert(g.run('cancelRegistration(G.cars[0].id).ok') && g.run('G.money') === m, 'cancel refunds');
+  g.run(`registerForNextSeason('gt4_regional', '${car}')`);
+  g.run('endSeason(); _activateRegistrations(G.seasonStartTime);');
+  assert(g.run(`G.activeChampionships.some(e => e.carId === '${car}' && e.definitionId === 'gt4_regional')`), 'started in the new season');
+  assert(g.run('G.registrations.length') === 0, 'registration used up');
+});
+
+test('A registration that cannot start is refunded', () => {
+  const { g, a, car } = setup();
+  g.run(`assignDriver('${a}', '${car}'); registerForNextSeason('gt4_regional', '${car}'); unassignDriver('${a}');`);
+  const m = g.run('G.money');
+  g.run('endSeason(); _activateRegistrations(G.seasonStartTime);');
+  assert(g.run('G.money') - m === 5000 && g.run('G.activeChampionships.length') === 0, 'fee refunded, nothing started');
 });
 
 let failed = 0;

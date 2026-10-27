@@ -1097,6 +1097,23 @@ select { font-family: inherit; }
 }
 .cancel-sign-btn { color: var(--text-2); }
 
+/* ─── Next-season registrations (Championships) ───────────────────────────── */
+.next-season-list { display: flex; flex-direction: column; gap: 6px; margin-bottom: 20px; }
+.next-season-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--cls-color);
+  border-radius: var(--radius);
+  padding: 8px 12px;
+}
+.next-season-champ { font-weight: 600; font-size: 13px; }
+.next-season-car { font-size: 12px; color: var(--text-2); flex: 1; }
+.cancel-reg-btn, .register-champ-btn { font-size: 12px; }
+
 /* ─── Pit crew (Garage) ───────────────────────────────────────────────────── */
 .pit-crew-bar {
   display: flex;
