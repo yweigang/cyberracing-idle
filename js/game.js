@@ -66,11 +66,14 @@ function createDefaultState() {
 
 // ─── Car Performance ──────────────────────────────────────────────────────────
 
-// Rating points from upgrades. Reliability above Lv 10 adds a little pace.
+// Class base rating raised by upgrades (each level adds a % of the base).
+// Reliability above Lv 10 adds 1% per level.
 function calcCarBaseRating(car) {
+  const cls = getCarClassById(car.classId);
   const u = car.upgrades;
-  const reliPace = Math.max(0, u.reliability - 10);
-  return 100 + UPGRADE_ORDER.reduce((sum, id) => sum + u[id] * UPGRADES[id].ratingPerLevel, 0) + reliPace;
+  const pct = UPGRADE_ORDER.reduce((sum, id) => sum + u[id] * UPGRADES[id].ratingPctPerLevel, 0)
+    + Math.max(0, u.reliability - 10);
+  return (cls ? cls.baseRating : 100) * (1 + pct / 100);
 }
 
 // Weighted driver skill (0–100) for a race format and conditions
@@ -334,11 +337,10 @@ function _gauss() {
   return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
 }
 
-// AI field strength for one class in a series (multi-class series get harder per class)
+// AI field strength for one class in a series
 function getFieldStrength(champDef, classId) {
-  const tiers = champDef.allowedClasses.map(id => getCarClassById(id).tier);
-  const cls = getCarClassById(classId);
-  return champDef.fieldStrength + MULTICLASS_STEP * ((cls ? cls.tier : 0) - Math.min(...tiers));
+  const fs = champDef.fieldStrength;
+  return fs[classId] || fs[champDef.allowedClasses[0]];
 }
 
 // P1 round prize for a class; higher classes in a series pay proportionally more

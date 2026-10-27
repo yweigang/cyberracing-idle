@@ -206,7 +206,7 @@ test('Selling a car refunds part of its value and frees the slot', () => {
   g.run(`G.reputation = 1000; upgradeGarage(); buyCar('GT3'); assignDriver('${a}', '${car}');`);
   g.run(`G.cars[0].upgrades.engine = 2`);
   const value = g.run(`getCarSellValue(G.cars[0])`);
-  assert(value === Math.floor(10000 * 0.5 + (2500 + 4500) * 0.3), 'value = 50% price + 30% upgrades, got ' + value);
+  assert(value === Math.floor(10000 * 0.5 + (1000 + 1800) * 0.3), 'value = 50% price + 30% upgrades, got ' + value);
   const m = g.run('G.money');
   assert(g.run(`sellCar('${car}').ok`), 'sell works');
   assert(g.run('G.money') - m === value && g.run('G.cars.length') === 1, 'refund paid and car removed');
