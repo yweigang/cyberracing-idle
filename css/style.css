@@ -585,6 +585,9 @@ select { font-family: inherit; }
 .champ-footer-actions { display: flex; gap: 6px; }
 .autorenew-btn.on { color: var(--green); border-color: #1a4030; }
 
+.sponsor-held { font-size: 11px; color: var(--text-2); font-family: var(--font-mono); text-align: right; }
+.opt-held-note { font-size: 11px; color: var(--text-3); }
+
 .hq-intro { font-size: 12px; color: var(--text-2); margin-bottom: 12px; line-height: 1.5; }
 .hq-intro .pp-gain { color: var(--green); font-family: var(--font-mono); font-weight: 600; }
 .hq-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; }

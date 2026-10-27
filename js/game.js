@@ -106,14 +106,39 @@ function calcDNFChance(car, format = 'sprint') {
 
 // Sponsor income is now the primary passive income source.
 // Car income formula is retained only for championship payout bonus calculations.
-function calcSponsorIncomePerSec() {
+function _sponsorMult() {
   const prestigeBonus = (G.prestige && G.prestige.permanentBonuses && G.prestige.permanentBonuses.sponsorBonus) || 0;
-  const tpBonus = getTPBonuses().sponsorMult;
-  const sponsorMult = 1 + prestigeBonus + tpBonus + getHQLevel('hospitality') * 0.05;
+  return 1 + prestigeBonus + getTPBonuses().sponsorMult + getHQLevel('hospitality') * 0.05;
+}
+
+// Share of a sponsor's income paid straight away (targeted sponsors hold the rest back)
+function _upfrontShare(sponsor) {
+  return sponsor.target ? SPONSOR_UPFRONT_SHARE : 1;
+}
+
+// Sponsor income paid out right now, per second
+function calcSponsorIncomePerSec() {
   const parentsIncome = 8; // Mum & Dad Racing Support — always active
   const sponsors = Array.isArray(G.sponsors) ? G.sponsors : [];
-  const earnedIncome = sponsors.reduce((sum, s) => sum + (s ? s.incomePerSec : 0), 0);
-  return (parentsIncome + earnedIncome) * sponsorMult;
+  const paid = sponsors.reduce((sum, s) => sum + (s ? s.incomePerSec * _upfrontShare(s) : 0), 0);
+  return (parentsIncome + paid) * _sponsorMult();
+}
+
+// Sponsor income held back until season end, per second
+function calcSponsorHeldPerSec() {
+  const sponsors = Array.isArray(G.sponsors) ? G.sponsors : [];
+  return sponsors.reduce((sum, s) => sum + (s ? s.incomePerSec * (1 - _upfrontShare(s)) : 0), 0) * _sponsorMult();
+}
+
+// Pay `sec` seconds of sponsor income and accrue each sponsor's held-back share
+function accrueSponsorIncome(sec) {
+  const income = calcSponsorIncomePerSec() * sec;
+  G.money += income;
+  G.totalEarned += income;
+  const mult = _sponsorMult();
+  G.sponsors.forEach(s => {
+    if (s && s.target) s.heldBack = (s.heldBack || 0) + s.incomePerSec * (1 - SPONSOR_UPFRONT_SHARE) * mult * sec;
+  });
 }
 
 function calcTotalIncomePerSec() {
@@ -709,15 +734,21 @@ function isSponsorTargetMet(sponsor) {
   }
 }
 
+// Championships completed since the last prestige (sponsor interest follows the current run)
+function _runChampionships() {
+  const since = (G.prestige && G.prestige.lastPrestigeAt) || 0;
+  return G.completedChampionships.filter(c => (c.completedAt || 0) > since && c.finalPosition);
+}
+
 function _bestFinish(champIds) {
-  return G.completedChampionships.filter(c => champIds.includes(c.definitionId) && c.finalPosition)
+  return _runChampionships().filter(c => champIds.includes(c.definitionId))
     .reduce((m, c) => Math.min(m, c.finalPosition), Infinity);
 }
 
-// Sponsor tiers interested in the team, based on results so far
+// Sponsor tiers interested in the team, based on results in the current run
 function getAvailableSponsorTiers() {
   const tiers = ['regional'];
-  const anyTop3 = G.completedChampionships.some(c => c.finalPosition && c.finalPosition <= 3);
+  const anyTop3 = _runChampionships().some(c => c.finalPosition <= 3);
   if (anyTop3) tiers.push('national');
   if (_bestFinish(MAJOR_CHAMPIONSHIPS) <= 5) tiers.push('international');
   if (_bestFinish(TOP_CHAMPIONSHIPS) <= 3) tiers.push('factory');
@@ -809,7 +840,14 @@ function evaluateSponsorsAtSeasonEnd() {
   G.sponsors.forEach((s, i) => {
     if (!s) return;
     const met = isSponsorTargetMet(s);
+    const held = Math.round(s.heldBack || 0);
+    s.heldBack = 0;
     if (met) {
+      if (held > 0) {
+        G.money += held;
+        G.totalEarned += held;
+        addNotification(`${s.name} target met — held-back income paid: +$${formatNumber(held)}`, 'success');
+      }
       if (s.bonusCash > 0) {
         G.money += s.bonusCash;
         G.totalEarned += s.bonusCash;
@@ -835,7 +873,7 @@ function evaluateSponsorsAtSeasonEnd() {
         }
       }
     } else {
-      addNotification(`${s.name} target not met — contract terminated.`, 'error');
+      addNotification(`${s.name} target not met — contract terminated${held > 0 ? `, $${formatNumber(held)} held-back income forfeited` : ''}.`, 'error');
       G.sponsors[i] = null;
     }
   });
@@ -1393,9 +1431,7 @@ function tick(deltaMs) {
   const deltaSec = deltaMs / 1000;
 
   // Passive sponsor income
-  const income = calcTotalIncomePerSec() * deltaSec;
-  G.money += income;
-  G.totalEarned += income;
+  accrueSponsorIncome(deltaSec);
 
   // Driver XP (passive growth, boosted by RE driverCoach)
   G.drivers.forEach(d => {
@@ -1464,10 +1500,7 @@ function applyOfflineProgress() {
   const elapsed = Math.min((now - G.lastSave) / 1000, MAX_OFFLINE_SEC);
   if (elapsed < 5) return;
 
-  // Sponsor income for the time away
-  const income = calcTotalIncomePerSec() * elapsed;
-  G.money += income;
-  G.totalEarned += income;
+  const earnedBefore = G.totalEarned;
 
   // Time beyond the offline cap is frozen: shift all clocks forward by it
   const frozenMs = Math.max(0, now - G.lastSave - elapsed * 1000);
@@ -1481,7 +1514,12 @@ function applyOfflineProgress() {
   const seasonBefore = G.season;
   _quietNotifications = true;
   try {
-    for (let t = G.lastSave + frozenMs; t < now; t = Math.min(now, t + 5000)) advanceWorld(Math.min(now, t + 5000));
+    for (let t = G.lastSave + frozenMs; t < now; ) {
+      const next = Math.min(now, t + 5000);
+      accrueSponsorIncome((next - t) / 1000);
+      advanceWorld(next);
+      t = next;
+    }
   } finally {
     _quietNotifications = false;
   }
@@ -1491,8 +1529,7 @@ function applyOfflineProgress() {
   if (titles > 0) parts.push(`${titles} title${titles > 1 ? 's' : ''} won`);
   if (seasons > 0) parts.push(`${seasons} season${seasons > 1 ? 's' : ''} completed`);
   if (parts.length) addNotification(`While you were away: ${parts.join(', ')}.`, 'info');
-
-  return elapsed;  G.activeChampionships = G.activeChampionships.filter(e => !e._completed);
+  _offlineEarned = G.totalEarned - earnedBefore;
 
   return elapsed;
 }
@@ -1598,7 +1635,6 @@ function initGame() {
   } else {
     const elapsed = applyOfflineProgress();
     if (elapsed > 5) {
-      _offlineEarned = calcTotalIncomePerSec() * elapsed;
       addNotification(`Welcome back! Your cars raced for ${formatTime(elapsed)}. +$${formatNumber(_offlineEarned)} earned offline.`, 'offline');
     }
   }

@@ -89,14 +89,25 @@ var BOT = {
     // A second GT4 early on for more prize money and LP
     if (G.cars.length < getGarageSlots(G.garageLevel) && G.cars.filter(c => c.classId === 'GT4').length < 2 && G.money > 30000) buyCar('GT4');
     if (G.cars.length >= getGarageSlots(G.garageLevel) && G.cars.length < 2) upgradeGarage();
-    // Sponsors: highest income among this season's offers
+    // Sponsors: highest income among offers whose target the team can plausibly reach
+    const maxTier = Math.max(...G.cars.map(c => BOT.tierOf(c)));
+    const canEnter = ids => G.cars.some(car => BOT.champsFor(car).some(c => ids.includes(c.id)));
+    const reachable = o => {
+      const t = o.target;
+      if (t.type === 'champ_top') return maxTier >= (t.minTier || 1);
+      if (t.type === 'major_top') return canEnter(MAJOR_CHAMPIONSHIPS);
+      if (t.type === 'top_title') return canEnter(TOP_CHAMPIONSHIPS) && maxTier >= 4;
+      return true;
+    };
     for (let i = 0; i < getSponsorSlotsUnlocked(); i++) {
       if (G.sponsors[i]) continue;
-      const best = [...getSponsorOffers()].sort((a, b) => b.incomePerSec - a.incomePerSec)[0];
+      const best = getSponsorOffers().filter(reachable).sort((a, b) => b.incomePerSec - a.incomePerSec)[0];
       if (best) signSponsorOffer(i, best.id);
     }
     // Upgrades: most rating per dollar, weighted by how far the car is below its target
-    const reserve = (next ? next.baseCost * 0.5 : 0)
+    // Save for the next class only once the current cars are close to competitive
+    const carsReady = G.cars.every(c => calcCarRating(c) >= BOT.targetRating(c) * 0.85);
+    const reserve = (next && carsReady ? next.baseCost * 0.5 : 0)
       + Math.max(0, ...G.cars.map(c => { const s = BOT.pickSeries(c); return s ? s.entryFee : 0; }));
     for (let k = 0; k < 100; k++) {
       let best = null;

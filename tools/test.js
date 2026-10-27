@@ -274,6 +274,40 @@ test('HQ levels pay PP on prestige and reset', () => {
   assert(g.run('G.prestigePoints') === 20 && g.run('getHQLevel("simulator")') === 0, 'PP paid and HQ reset');
 });
 
+test('Targeted sponsors hold back part of their income until the target is met', () => {
+  const { g, a, car } = setup();
+  g.run(`G.sponsors[0] = Object.assign(generateSponsor('regional'), { incomePerSec: 100, target: { type: 'round_podiums', count: 1 }, seasonsRemaining: 3 })`);
+  const m = g.run('G.money');
+  g.run('accrueSponsorIncome(100)');
+  const share = g.run('SPONSOR_UPFRONT_SHARE');
+  assert(Math.round(g.run('G.money') - m) === Math.round((8 + 100 * share) * 100), 'family full + upfront share paid now');
+  assert(Math.round(g.run('G.sponsors[0].heldBack')) === Math.round(100 * (1 - share) * 100), 'rest held back');
+  g.run(`assignDriver('${a}', '${car}'); UPGRADE_ORDER.forEach(u => G.cars[0].upgrades[u] = 12);`);
+  finishChamp(g, 'gt4_regional', car);
+  const held = g.run('G.sponsors[0].heldBack'), m2 = g.run('G.money');
+  g.run('evaluateSponsorsAtSeasonEnd()');
+  assert(Math.round(g.run('G.money') - m2) >= Math.round(held) + 5000, 'held income + bonus paid when target met');
+  assert(g.run('G.sponsors[0].heldBack') === 0, 'held amount resets');
+});
+
+test('A missed target forfeits the held-back income', () => {
+  const { g } = setup();
+  g.run(`G.sponsors[0] = Object.assign(generateSponsor('regional'), { incomePerSec: 100, target: { type: 'round_wins', count: 5 } }); accrueSponsorIncome(100);`);
+  const m = g.run('G.money');
+  g.run('evaluateSponsorsAtSeasonEnd()');
+  assert(g.run('G.money') === m && g.run('G.sponsors[0]') === null, 'nothing paid and contract ended');
+});
+
+test('Sponsor tiers start over after a prestige', () => {
+  const { g, a, car } = setup();
+  g.run(`assignDriver('${a}', '${car}'); UPGRADE_ORDER.forEach(u => G.cars[0].upgrades[u] = 12);`);
+  finishChamp(g, 'gt4_regional', car);
+  assert(g.run('getAvailableSponsorTiers().includes("national")'), 'national after a podium');
+  g.advance(1000);
+  g.run('G.reputation = 50000; doPrestige()');
+  assert(g.run('getAvailableSponsorTiers().join()') === 'regional', 'back to regional after the reset');
+});
+
 let failed = 0;
 for (const t of tests) {
   try { t.fn(); console.log('PASS', t.name); }

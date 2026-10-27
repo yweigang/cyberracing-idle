@@ -684,8 +684,12 @@ function renderSponsors() {
     <div class="section-header">SPONSORS</div>
     <div class="sponsor-overview-bar">
       <div class="sponsor-overview-stat">
-        <span class="sponsor-overview-label">Total Sponsor Income</span>
+        <span class="sponsor-overview-label">Sponsor Income Paid Now</span>
         <span class="sponsor-overview-ips" id="sponsor-total-ips">$${formatNumber(totalIps)}/s</span>
+      </div>
+      <div class="sponsor-overview-stat">
+        <span class="sponsor-overview-label">Held Until Targets Met</span>
+        <span class="sponsor-overview-value" id="sponsor-held-ips">+$${formatNumber(calcSponsorHeldPerSec())}/s</span>
       </div>
       <div class="sponsor-overview-stat">
         <span class="sponsor-overview-label">Season</span>
@@ -778,6 +782,7 @@ function renderSponsors() {
               </div>
               <div class="sponsor-ips-col">
                 <div class="sponsor-ips-value" data-live-sponsor-ips="${sponsor.id}">$${formatNumber(sponsor.incomePerSec)}/s</div>
+                ${sponsor.target ? `<div class="sponsor-held" data-live-held="${sponsor.id}">held: $${formatNumber(sponsor.heldBack || 0)}</div>` : ''}
               </div>
             </div>
             <div class="sponsor-details">
@@ -827,6 +832,7 @@ function renderSponsors() {
             </div>
           </div>
           <div class="opt-ips">$${formatNumber(opt.incomePerSec)}/s</div>
+          <div class="opt-held-note">${Math.round(SPONSOR_UPFRONT_SHARE * 100)}% paid now, the rest at season end if the target is met</div>
           <div class="opt-details">
             <span>📅 ${contractLbl}</span>
             <span>🎯 ${targetLbl}</span>
@@ -897,11 +903,15 @@ function updateSponsorsLive() {
 
   const totalEl = document.getElementById('sponsor-total-ips');
   if (totalEl) totalEl.textContent = '$' + formatNumber(calcSponsorIncomePerSec()) + '/s';
+  const heldTotalEl = document.getElementById('sponsor-held-ips');
+  if (heldTotalEl) heldTotalEl.textContent = '+$' + formatNumber(calcSponsorHeldPerSec()) + '/s';
 
   G.sponsors.forEach(s => {
     if (!s) return;
     const ipsEl = document.querySelector(`[data-live-sponsor-ips="${s.id}"]`);
     if (ipsEl) ipsEl.textContent = '$' + formatNumber(s.incomePerSec) + '/s';
+    const heldEl = document.querySelector(`[data-live-held="${s.id}"]`);
+    if (heldEl) heldEl.textContent = 'held: $' + formatNumber(s.heldBack || 0);
 
     const targetEl = document.querySelector(`[data-live-target="${s.id}"]`);
     if (targetEl) {

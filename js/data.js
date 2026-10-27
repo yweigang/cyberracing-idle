@@ -753,6 +753,10 @@ const SPONSOR_TIERS = {
 const MAJOR_CHAMPIONSHIPS = ['imsa_weathertech', 'elms', 'fia_wec', 'formula_2_championship', 'f1_world_championship'];
 const TOP_CHAMPIONSHIPS   = ['fia_wec', 'f1_world_championship'];
 
+// Share of a targeted sponsor's income paid as it accrues; the rest is held
+// back and only paid at season end if the target is met
+const SPONSOR_UPFRONT_SHARE = 0.75;
+
 // Sponsor offers available per season (fixed until the season ends)
 const SPONSOR_OFFERS_PER_SEASON = 4;
 
