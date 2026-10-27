@@ -127,7 +127,7 @@ var BOT = {
     // Save for the next class only once the current cars are close to competitive
     const carsReady = G.cars.every(c => BOT.rating(c) >= BOT.targetRating(c) * 0.85);
     const reserve = (next && carsReady ? next.baseCost * 0.5 : 0)
-      + Math.max(0, ...G.cars.map(c => { const s = BOT.pickSeries(c); return s ? s.entryFee : 0; }));
+      + Math.max(0, ...G.cars.map(c => { const s = BOT.pickSeries(c); return s ? getEntryFee(s, c) : 0; }));
     // Spending: car preparation, pit crew training/size and better drivers, by rating
     // gained per dollar, weighted by how far the cars are below their targets
     const TIER_RANK = { C: 0, B: 1, A: 2, S: 3, L: 4 };
@@ -184,7 +184,7 @@ var BOT = {
     G.cars.forEach(car => {
       const c = BOT.pickSeries(car);
       if (!c) return;
-      if (!car.championshipId && car.driverId && G.money >= c.entryFee) enterChampionship(c.id, car.id);
+      if (!car.championshipId && car.driverId && G.money >= getEntryFee(c, car)) enterChampionship(c.id, car.id);
       if (car.autoRenew && car.autoRenew !== c.id) car.autoRenew = c.id;
     });
   },

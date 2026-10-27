@@ -283,7 +283,7 @@ const CHAMPIONSHIPS = [
     allowedClasses: ['GT4'],
     rounds: 8,
     roundDurationSec: 60,
-    entryFee: 5000,
+    entryFeeShare: 0.3125,  // starter series: $5,000, what a reset leaves the team
     repRequired: 0,
     prerequisiteChampionship: null,
     repPerRound: 20,
@@ -301,7 +301,6 @@ const CHAMPIONSHIPS = [
     allowedClasses: ['GT3'],
     rounds: 10,
     roundDurationSec: 90,
-    entryFee: 50000,
     repRequired: 800,
     prerequisiteChampionship: 'gt4_regional',
     repPerRound: 40,
@@ -319,7 +318,6 @@ const CHAMPIONSHIPS = [
     allowedClasses: ['GT3', 'LMP2', 'HYPERCAR'],
     rounds: 12,
     roundDurationSec: 120,
-    entryFee: 300000,
     repRequired: 3500,
     prerequisiteChampionship: 'gt_world_challenge',
     repPerRound: 70,
@@ -338,7 +336,6 @@ const CHAMPIONSHIPS = [
     allowedClasses: ['GT3', 'LMP3', 'LMP2'],
     rounds: 6,
     roundDurationSec: 150,
-    entryFee: 500000,
     repRequired: 2500,      // the LMP3's series: opens when the LMP3 can be bought
     prerequisiteChampionship: 'gt_world_challenge',
     repPerRound: 80,
@@ -357,7 +354,6 @@ const CHAMPIONSHIPS = [
     allowedClasses: ['GT3', 'LMP2', 'HYPERCAR'],
     rounds: 8,
     roundDurationSec: 180,
-    entryFee: 2000000,
     repRequired: 20000,
     prerequisiteChampionship: ['imsa_weathertech', 'elms'], // either one
     repPerRound: 120,
@@ -377,7 +373,7 @@ const CHAMPIONSHIPS = [
     allowedClasses: ['F4'],
     rounds: 8,
     roundDurationSec: 60,
-    entryFee: 10000,
+    entryFeeShare: 0.25,    // first series after a reset
     repRequired: 0,
     prerequisiteChampionship: null,
     repPerRound: 20,
@@ -396,7 +392,6 @@ const CHAMPIONSHIPS = [
     allowedClasses: ['F3'],
     rounds: 12,
     roundDurationSec: 90,
-    entryFee: 150000,
     repRequired: 3000,
     prerequisiteChampionship: 'formula_regional',
     repPerRound: 40,
@@ -415,7 +410,6 @@ const CHAMPIONSHIPS = [
     allowedClasses: ['F2'],
     rounds: 16,
     roundDurationSec: 120,
-    entryFee: 2000000,
     repRequired: 15000,
     prerequisiteChampionship: 'formula_3_championship',
     repPerRound: 80,
@@ -434,7 +428,6 @@ const CHAMPIONSHIPS = [
     allowedClasses: ['F1'],
     rounds: 24,
     roundDurationSec: 120,
-    entryFee: 20000000,
     repRequired: 80000,
     prerequisiteChampionship: 'formula_2_championship',
     repPerRound: 100,
@@ -460,6 +453,10 @@ const PRIZE_FACTORS = [1, 0.8, 0.66, 0.55, 0.46, 0.39, 0.33, 0.28, 0.24, 0.2, 0.
 const STANDING_BONUS = [0.6, 0.45, 0.35, 0.27, 0.2, 0.15, 0.11, 0.08, 0.05, 0.03];
 // REP bonus on the final standings, same base (P1 round REP × rounds)
 const STANDING_REP_BONUS = [0.5, 0.3, 0.2, 0.1, 0.05];
+
+// First entry fee for a class: this share of what a P1 car earns from race prizes
+// (P1 round prize × rounds). Mid-field still profits; series may set entryFeeShare.
+const ENTRY_FEE_SHARE = 0.5;
 
 // A car that has raced a series before keeps its slot: later entries cost this share of the fee
 const RENEWAL_FEE_SHARE = 0.25;

@@ -608,7 +608,8 @@ function renderChampionships() {
     const completions = G.champCompletions[champDef.id] || 0;
     const selCar = _selectedCarForChamp ? G.cars.find(c => c.id === _selectedCarForChamp) : null;
     const selFits = selCar && champDef.allowedClasses.includes(selCar.classId);
-    const fee = getEntryFee(champDef, selFits ? selCar : null);
+    const feeClass = selFits ? selCar.classId : champDef.allowedClasses[0];
+    const fee = getEntryFee(champDef, selFits ? selCar : null, feeClass);
     const renewal = selFits && hasSeriesSlot(selCar, champDef);
     const canAfford  = G.money >= fee;
     const selBusy = !!(selCar && selCar.championshipId);
@@ -659,7 +660,7 @@ function renderChampionships() {
           <span>🏆 Prize pool: P1 $${formatNumber(p1Prize * champDef.rounds * STANDING_BONUS[0])} · P5 $${formatNumber(p1Prize * champDef.rounds * STANDING_BONUS[4])}</span>
           <span>🎟 ${renewal
             ? `Renewal $${formatNumber(fee)} (${selCar.name} has a slot)`
-            : `First entry $${formatNumber(champDef.entryFee)} · renewals $${formatNumber(Math.round(champDef.entryFee * RENEWAL_FEE_SHARE))}`}</span>
+            : `${feeClass} first entry $${formatNumber(getClassEntryFee(champDef, feeClass))} · renewals $${formatNumber(getRenewalFee(champDef, feeClass))}`}</span>
         </div>
         ${lockReasons.length > 0 ? `<div class="champ-lock-reasons">${lockReasons.join('')}</div>` : ''}
         ${offerRegister

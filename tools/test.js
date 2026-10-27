@@ -590,6 +590,15 @@ test('A championship cut short by the season end refunds its fee', () => {
   assert(g.run('G.money') === m + 5000, 'fee refunded');
 });
 
+test('Every class makes money mid-field: first entry at P5, renewal at P8', () => {
+  const { g } = setup();
+  const losers = g.run(`CHAMPIONSHIPS.flatMap(c => c.allowedClasses.filter(k => {
+    const earn = pos => getRoundPrize(c, k) * c.rounds * (getPrizeFactor(pos) + (STANDING_BONUS[pos - 1] || 0));
+    return earn(5) <= getClassEntryFee(c, k) || earn(8) <= getRenewalFee(c, k);
+  }).map(k => c.shortName + ' ' + k))`);
+  assert(losers.length === 0, 'loss-making: ' + losers.join(', '));
+});
+
 let failed = 0;
 for (const t of tests) {
   try { t.fn(); console.log('PASS', t.name); }

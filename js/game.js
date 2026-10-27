@@ -382,7 +382,7 @@ function getRestartCost() {
     if (G.reputation < cls.repRequired || (cls.ppRequired && G.prestigePoints < cls.ppRequired)) return;
     const fees = CHAMPIONSHIPS.filter(c => c.allowedClasses.includes(cls.id)
       && (!c.pathway || isSingleSeaterUnlocked())
-      && G.reputation >= (c.repRequired || 0) && checkChampionshipPrerequisite(c)).map(c => c.entryFee);
+      && G.reputation >= (c.repRequired || 0) && checkChampionshipPrerequisite(c)).map(c => getClassEntryFee(c, cls.id));
     if (fees.length) best = Math.min(best, cls.baseCost + Math.min(...fees));
   });
   return best;
@@ -482,8 +482,20 @@ function hasSeriesSlot(car, champDef) {
   return !!(car && champDef && (car.seriesSlots || []).includes(champDef.id));
 }
 
-function getEntryFee(champDef, car) {
-  return hasSeriesSlot(car, champDef) ? Math.round(champDef.entryFee * RENEWAL_FEE_SHARE) : champDef.entryFee;
+// First entry fee for a class in a series, rounded to two significant digits
+function getClassEntryFee(champDef, classId = champDef.allowedClasses[0]) {
+  const raw = getRoundPrize(champDef, classId) * champDef.rounds * (champDef.entryFeeShare || ENTRY_FEE_SHARE);
+  const unit = Math.pow(10, Math.max(0, Math.floor(Math.log10(raw)) - 1));
+  return Math.round(raw / unit) * unit;
+}
+
+function getRenewalFee(champDef, classId) {
+  return Math.round(getClassEntryFee(champDef, classId) * RENEWAL_FEE_SHARE);
+}
+
+// Fee a car pays to enter; without a car, the fee for classId (default: the series' first class)
+function getEntryFee(champDef, car, classId = car ? car.classId : undefined) {
+  return hasSeriesSlot(car, champDef) ? getRenewalFee(champDef, classId) : getClassEntryFee(champDef, classId);
 }
 
 function fitsInSeason(champDef, at = Date.now()) {
@@ -1592,7 +1604,7 @@ function endSeason(endedAt = getSeasonEndTime()) {
   G.activeChampionships.forEach(entry => {
     const def = getChampionshipById(entry.definitionId);
     if (!def) return;
-    const paid = entry.feePaid !== undefined ? entry.feePaid : def.entryFee;
+    const paid = entry.feePaid !== undefined ? entry.feePaid : getClassEntryFee(def, entry.classId);
     G.money += paid;
     addNotification(`${def.name} couldn't finish before the season ended: $${formatNumber(paid)} entry fee refunded.`, 'info');
   });
