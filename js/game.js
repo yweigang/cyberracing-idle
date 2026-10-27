@@ -56,41 +56,40 @@ function createDefaultState() {
   };
 }
 
-// ─── Income Calculations ──────────────────────────────────────────────────────
+// ─── Car Performance ──────────────────────────────────────────────────────────
 
-function calcCarIncomePerSec(car) {
-  const cls = getCarClassById(car.classId);
-  if (!cls) return 0;
+// Rating points from upgrades. Reliability above Lv 10 adds a little pace.
+function calcCarBaseRating(car) {
+  const u = car.upgrades;
+  const reliPace = Math.max(0, u.reliability - 10);
+  return 100 + UPGRADE_ORDER.reduce((sum, id) => sum + u[id] * UPGRADES[id].ratingPerLevel, 0) + reliPace;
+}
 
-  const upg = car.upgrades;
-  const re  = getREForCar(car.id);
-  const reB = re ? getREBonuses(car.id) : { setupBonus: 0, reliBonus: 0, pitBonus: 0 };
-
-  const engMult   = UPGRADES.engine.getIncomeMult(upg.engine);
-  const aeroMult  = UPGRADES.aero.getIncomeMult(upg.aero);
-  const tyresMult = UPGRADES.tyres.getIncomeMult(upg.tyres);
-  const brakeMult = UPGRADES.brakes.getIncomeMult(upg.brakes);
-  const reliMult  = UPGRADES.reliability.getIncomeMult(upg.reliability) * (1 + reB.reliBonus);
-
-  let driverMult = 1.0;
-  if (car.driverId !== null) {
-    const driver = G.drivers.find(d => d.id === car.driverId);
-    if (driver) driverMult = 1 + driver.pace / 100;
+// Weighted driver skill (0–100) for a race format and conditions
+function calcDriverSkill(driver, format, wet) {
+  if (!driver) return 0;
+  let pace = driver.pace;
+  if (wet) pace = (driver.pace + driver.rainSkill) / 2;
+  if (format === 'endurance') {
+    return pace * 0.5 + driver.tyreManagement * 0.25 + driver.fitness * 0.25;
   }
+  return pace * 0.7 + driver.tyreManagement * 0.3;
+}
 
-  let champBonus = 1.0;
-  if (car.championshipId !== null) {
-    const activeChamp = G.activeChampionships.find(c => c.id === car.championshipId);
-    if (activeChamp) {
-      const champDef = getChampionshipById(activeChamp.definitionId);
-      if (champDef) champBonus = 1 + champDef.incomeBonus + reB.pitBonus;
-    }
-  }
+// Full race rating of a car with its current driver and staff
+function calcCarRating(car, format = 'sprint', wet = false) {
+  const driver = car.driverId ? G.drivers.find(d => d.id === car.driverId) : null;
+  const reB = getREBonuses(car.id);
+  const driverMult = 1 + calcDriverSkill(driver, format, wet) / 100 + getTPBonuses().paceMult;
+  return calcCarBaseRating(car) * driverMult * (1 + reB.setupBonus)
+    * G.prestige.permanentBonuses.incomeMultiplier;
+}
 
-  const basePerSec = cls.baseIncomePerLap / cls.lapTimeSec;
-  return basePerSec * engMult * aeroMult * tyresMult * brakeMult * reliMult
-    * driverMult * champBonus * G.prestige.permanentBonuses.incomeMultiplier
-    * (1 + reB.setupBonus);
+// Chance per round that the car retires. Endurance rounds are twice as punishing.
+function calcDNFChance(car, format = 'sprint') {
+  const reB = getREBonuses(car.id);
+  const base = Math.max(0.01, 0.10 - car.upgrades.reliability * 0.01);
+  return base * (format === 'endurance' ? 2 : 1) * Math.max(0, 1 - reB.reliBonus * 2);
 }
 
 // Sponsor income is now the primary passive income source.
@@ -112,7 +111,7 @@ function calcTotalIncomePerSec() {
 // ─── Upgrade Logic ────────────────────────────────────────────────────────────
 
 function canAffordUpgrade(car, upgradeId) {
-  const cost = getEffectiveUpgradeCost(upgradeId, car.upgrades[upgradeId]);
+  const cost = getEffectiveUpgradeCost(upgradeId, car.upgrades[upgradeId], car.classId);
   return G.money >= cost;
 }
 
@@ -125,7 +124,7 @@ function buyUpgrade(carId, upgradeId) {
   if (!car) return { ok: false, msg: 'Car not found.' };
   if (isUpgradeMaxed(car, upgradeId)) return { ok: false, msg: 'Already maxed.' };
 
-  const cost = getEffectiveUpgradeCost(upgradeId, car.upgrades[upgradeId]);
+  const cost = getEffectiveUpgradeCost(upgradeId, car.upgrades[upgradeId], car.classId);
   if (G.money < cost) return { ok: false, msg: 'Not enough money.' };
 
   G.money -= cost;
@@ -219,6 +218,7 @@ function enterChampionship(definitionId, carId) {
     return { ok: false, msg: `${car.name} cannot enter this series.` };
 
   if (car.championshipId !== null) return { ok: false, msg: 'Car already in a championship.' };
+  if (!car.driverId) return { ok: false, msg: 'Assign a driver first.' };
   if (G.money < champDef.entryFee) return { ok: false, msg: 'Not enough money for entry fee.' };
 
   G.money -= champDef.entryFee;
@@ -232,7 +232,12 @@ function enterChampionship(definitionId, carId) {
     roundStartTime: Date.now(),
     roundDurationSec: champDef.roundDurationSec,
     repEarned: 0,
-    incomeEarned: 0,
+    prizeEarned: 0,
+    classId: car.classId,
+    points: 0,
+    results: [],
+    lastRound: null,
+    field: generateField(champDef, car.classId),
     startedAt: Date.now(),
   };
 
@@ -251,6 +256,127 @@ function withdrawFromChampionship(entryId) {
 
   G.activeChampionships.splice(idx, 1);
   return { ok: true };
+}
+
+// ─── Race Engine ──────────────────────────────────────────────────────────────
+
+function _gauss() {
+  const u = 1 - Math.random(), v = Math.random();
+  return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+}
+
+// AI field strength for one class in a series (multi-class series get harder per class)
+function getFieldStrength(champDef, classId) {
+  const tiers = champDef.allowedClasses.map(id => getCarClassById(id).tier);
+  const cls = getCarClassById(classId);
+  return champDef.fieldStrength + MULTICLASS_STEP * ((cls ? cls.tier : 0) - Math.min(...tiers));
+}
+
+// P1 round prize for a class; higher classes in a series pay proportionally more
+function getRoundPrize(champDef, classId) {
+  const cls = getCarClassById(classId);
+  return cls ? cls.baseIncomePerLap * champDef.prizeMult : 0;
+}
+
+function generateField(champDef, classId) {
+  const strength = getFieldStrength(champDef, classId);
+  const names = [...RIVAL_TEAMS].sort(() => Math.random() - 0.5).slice(0, FIELD_SIZE);
+  return names.map((name, i) => ({
+    name,
+    rating: Math.round(strength * (1 - FIELD_SPREAD / 2 + FIELD_SPREAD * i / (FIELD_SIZE - 1)) * (0.97 + Math.random() * 0.06)),
+    points: 0,
+  }));
+}
+
+const getPrizeFactor = pos => PRIZE_FACTORS[Math.min(pos - 1, PRIZE_FACTORS.length - 1)];
+const getRoundPoints = pos => POINTS_TABLE[pos - 1] || 0;
+
+// Current standings, best first. The player's row has isPlayer: true.
+function getStandings(entry) {
+  const rows = entry.field.map(r => ({ name: r.name, points: r.points, rating: r.rating, isPlayer: false }));
+  rows.push({ name: 'Your Team', points: entry.points, isPlayer: true });
+  // On equal points the player ranks behind (no countback)
+  return rows.sort((a, b) => b.points - a.points || (a.isPlayer ? 1 : 0) - (b.isPlayer ? 1 : 0));
+}
+
+function getStandingPosition(entry) {
+  return getStandings(entry).findIndex(r => r.isPlayer) + 1;
+}
+
+// Simulate one round: positions, points, prize money and REP
+function runChampionshipRound(entry) {
+  const champDef = getChampionshipById(entry.definitionId);
+  const car = G.cars.find(c => c.id === entry.carId);
+  const wet = Math.random() < (champDef.wetChance || 0);
+  const format = champDef.format || 'sprint';
+  const driver = car && car.driverId ? G.drivers.find(d => d.id === car.driverId) : null;
+
+  const aiScores = entry.field.map(r => r.rating * (1 + _gauss() * RACE_NOISE));
+  let pos = null, dnf = false, dns = false;
+  if (!car || !driver) {
+    dns = true;
+  } else if (Math.random() < calcDNFChance(car, format)) {
+    dnf = true;
+  } else {
+    const noise = RACE_NOISE * (1 - (driver.consistency || 0) / 200);
+    const score = calcCarRating(car, format, wet) * (1 + _gauss() * noise);
+    pos = 1 + aiScores.filter(sc => sc > score).length;
+  }
+
+  // AI points: rank AI by score, shifted one place down behind the player
+  aiScores.map((sc, i) => ({ sc, i })).sort((a, b) => b.sc - a.sc).forEach((o, rank) => {
+    const aiPos = rank + 1 + (pos !== null && rank + 1 >= pos ? 1 : 0);
+    entry.field[o.i].points += getRoundPoints(aiPos);
+  });
+
+  let prize = 0, rep = 0, points = 0;
+  if (pos !== null) {
+    points = getRoundPoints(pos);
+    prize = Math.round(getRoundPrize(champDef, entry.classId) * getPrizeFactor(pos) * (1 + getREBonuses(car.id).pitBonus));
+    rep = Math.round(champDef.repPerRound * getPrizeFactor(pos)) + getTPBonuses().strategyRep;
+  }
+  entry.points += points;
+  entry.prizeEarned += prize;
+  entry.repEarned += rep;
+  entry.results.push(dns ? 'DNS' : dnf ? 'DNF' : pos);
+  entry.currentRound++;
+  entry.lastRound = { pos, dnf, dns, wet, prize, rep, points, driverId: driver ? driver.id : null };
+  G.money += prize;
+  G.totalEarned += prize;
+  G.reputation += rep;
+  return entry.lastRound;
+}
+
+// Final standings payout and completion record
+function finishChampionship(entry) {
+  const champDef = getChampionshipById(entry.definitionId);
+  const car = G.cars.find(c => c.id === entry.carId);
+  const finalPos = getStandingPosition(entry);
+  const share = STANDING_BONUS[finalPos - 1] || 0;
+  const dataBonus = getREBonuses(entry.carId).dataBonus;
+  const bonusCash = Math.round(getRoundPrize(champDef, entry.classId) * entry.maxRounds * share * (1 + dataBonus));
+  const bonusRep  = Math.round(champDef.repPerRound * entry.maxRounds * share);
+  G.money += bonusCash;
+  G.totalEarned += bonusCash;
+  G.reputation += bonusRep;
+  entry.repEarned += bonusRep;
+
+  G.completedChampionships.push({
+    definitionId: entry.definitionId,
+    carId: entry.carId,
+    driverId: car ? car.driverId : null,
+    classId: entry.classId || (car && car.classId),
+    finalPosition: finalPos,
+    points: entry.points,
+    repEarned: entry.repEarned,
+    prizeEarned: entry.prizeEarned + bonusCash,
+    season: G.season,
+    completedAt: Date.now(),
+  });
+  G.champCompletions[entry.definitionId] = (G.champCompletions[entry.definitionId] || 0) + 1;
+  if (car) car.championshipId = null;
+  entry._completed = true;
+  return { finalPos, bonusCash, bonusRep };
 }
 
 // ─── Driver Stat Generation ───────────────────────────────────────────────────
@@ -336,10 +462,9 @@ function scoutDriver(tier) {
 
 // Returns the pace-based income multiplier for a car (1.0 if no driver).
 function calcDriverPaceMult(car) {
-  const tpMot = getTPBonuses().paceMult; // TP motivation bonus applies even without a driver
-  if (!car.driverId) return 1.0 + tpMot;
-  const driver = G.drivers.find(d => d.id === car.driverId);
-  return driver ? 1 + driver.pace / 100 + tpMot : 1.0 + tpMot;
+  const tpMot = getTPBonuses().paceMult;
+  const driver = car.driverId ? G.drivers.find(d => d.id === car.driverId) : null;
+  return 1 + calcDriverSkill(driver, 'sprint', false) / 100 + tpMot;
 }
 
 function assignDriver(driverId, carId) {
@@ -595,8 +720,8 @@ function getREBonuses(carId) {
 }
 
 // Upgrade cost after TP budget management discount
-function getEffectiveUpgradeCost(upgradeId, currentLevel) {
-  const base = getUpgradeCost(upgradeId, currentLevel);
+function getEffectiveUpgradeCost(upgradeId, currentLevel, classId) {
+  const base = getUpgradeCost(upgradeId, currentLevel, classId);
   return Math.max(1, Math.floor(base * getTPBonuses().upgradeCostMult));
 }
 
@@ -764,6 +889,20 @@ function _migrateDriverLicenses() {
         d.licenses.push(lt.id);
       }
     });
+  });
+}
+
+// Championships entered before the race engine get a rival field and standings
+function _migrateRaceEntries() {
+  G.activeChampionships.forEach(entry => {
+    const champDef = getChampionshipById(entry.definitionId);
+    const car = G.cars.find(c => c.id === entry.carId);
+    if (!entry.classId) entry.classId = car ? car.classId : champDef.allowedClasses[0];
+    if (!entry.field) entry.field = generateField(champDef, entry.classId);
+    if (entry.points === undefined) entry.points = 0;
+    if (!entry.results) entry.results = [];
+    if (entry.prizeEarned === undefined) entry.prizeEarned = entry.incomeEarned || 0;
+    if (entry.lastRound === undefined) entry.lastRound = null;
   });
 }
 
@@ -1025,50 +1164,19 @@ function tick(deltaMs) {
   // Championship round progression
   const now = Date.now();
   G.activeChampionships.forEach(entry => {
-    const elapsed = (now - entry.roundStartTime) / 1000;
-    if (elapsed >= entry.roundDurationSec) {
-      const champDef = getChampionshipById(entry.definitionId);
-      const strategyRep = getTPBonuses().strategyRep;
-      entry.currentRound++;
-      entry.repEarned += champDef.repPerRound + strategyRep;
-      G.reputation += champDef.repPerRound + strategyRep;
-      entry.roundStartTime = now;
+    if ((now - entry.roundStartTime) / 1000 < entry.roundDurationSec) return;
+    const champDef = getChampionshipById(entry.definitionId);
+    entry.roundStartTime = now;
+    const r = runChampionshipRound(entry);
+    const tag = `${champDef.shortName} R${entry.currentRound}/${entry.maxRounds}${r.wet ? ' (wet)' : ''}`;
+    if (r.dns)      addNotification(`${tag}: did not start — no driver.`, 'error');
+    else if (r.dnf) addNotification(`${tag}: DNF — mechanical failure.`, 'error');
+    else addNotification(`${tag}: finished P${r.pos} · +$${formatNumber(r.prize)} · +${r.rep} REP`, r.pos <= 3 ? 'success' : 'info');
 
-      const isFinal = entry.currentRound >= entry.maxRounds;
-      if (isFinal) {
-        // Final round bonus
-        const car = G.cars.find(c => c.id === entry.carId);
-        const champIncomePerSec = car ? calcCarIncomePerSec(car) : 0;
-        const dataBonus = getREBonuses(entry.carId).dataBonus;
-        const bonusCash = champIncomePerSec * entry.roundDurationSec * champDef.finalBonusMult * (1 + dataBonus);
-        G.money += bonusCash;
-        G.totalEarned += bonusCash;
-
-        // Extra REP bonus for completion
-        const completionRep = champDef.repPerRound * 2;
-        G.reputation += completionRep;
-        entry.repEarned += completionRep;
-
-        G.completedChampionships.push({
-          definitionId: entry.definitionId,
-          carId: entry.carId,
-          driverId: car ? car.driverId : null,
-          classId: car ? car.classId : null,
-          repEarned: entry.repEarned,
-          incomeEarned: entry.incomeEarned,
-          season: G.season,
-          completedAt: now,
-        });
-        G.champCompletions[entry.definitionId] = (G.champCompletions[entry.definitionId] || 0) + 1;
-
-        addNotification(`${champDef.name} complete! +${entry.repEarned} REP, +$${formatNumber(bonusCash)} bonus.`, 'success');
-
-        // Unlink car
-        if (car) car.championshipId = null;
-        entry._completed = true;
-      } else {
-        addNotification(`${champDef.shortName} — Round ${entry.currentRound}/${entry.maxRounds} complete. +${champDef.repPerRound} REP`, 'info');
-      }
+    if (entry.currentRound >= entry.maxRounds) {
+      const fin = finishChampionship(entry);
+      const title = fin.finalPos === 1 ? '🏆 CHAMPIONS!' : `finished P${fin.finalPos} overall`;
+      addNotification(`${champDef.name}: ${title}${fin.bonusCash ? ` +$${formatNumber(fin.bonusCash)} standings bonus` : ''}`, fin.finalPos <= 3 ? 'success' : 'info');
     }
   });
 
@@ -1083,46 +1191,27 @@ function applyOfflineProgress() {
   const elapsed = Math.min((now - G.lastSave) / 1000, MAX_OFFLINE_SEC);
   if (elapsed < 5) return;
 
-  // Simulate offline ticks in bulk (skip championship advancement for simplicity)
+  // Sponsor income for the time away
   const income = calcTotalIncomePerSec() * elapsed;
   G.money += income;
   G.totalEarned += income;
 
-  // Advance championships
+  // Advance championships round by round
+  let offlineRounds = 0, offlineTitles = 0;
+  const offlineEnd = G.lastSave + elapsed * 1000;
   G.activeChampionships.forEach(entry => {
-    const champDef = getChampionshipById(entry.definitionId);
-    const totalElapsed = elapsed + (Date.now() - entry.roundStartTime) / 1000;
-    const roundsCompleted = Math.floor(totalElapsed / entry.roundDurationSec);
-    const actualNew = Math.min(roundsCompleted, entry.maxRounds - entry.currentRound);
-
-    if (actualNew > 0) {
-      const repGain = actualNew * champDef.repPerRound;
-      entry.currentRound += actualNew;
-      entry.repEarned += repGain;
-      G.reputation += repGain;
-      entry.roundStartTime = Date.now() - ((totalElapsed % entry.roundDurationSec) * 1000);
-    }
-
-    if (entry.currentRound >= entry.maxRounds && !entry._completed) {
-      const car = G.cars.find(c => c.id === entry.carId);
-      const bonusCash = (car ? calcCarIncomePerSec(car) : 0) * entry.roundDurationSec * champDef.finalBonusMult;
-      G.money += bonusCash;
-      G.totalEarned += bonusCash;
-      G.reputation += champDef.repPerRound * 2;
-      G.completedChampionships.push({
-        definitionId: entry.definitionId,
-        carId: entry.carId,
-        driverId: car ? car.driverId : null,
-        classId: car ? car.classId : null,
-        repEarned: entry.repEarned,
-        season: G.season,
-        completedAt: Date.now(),
-      });
-      G.champCompletions[entry.definitionId] = (G.champCompletions[entry.definitionId] || 0) + 1;
-      if (car) car.championshipId = null;
-      entry._completed = true;
+    let roundEnd = entry.roundStartTime + entry.roundDurationSec * 1000;
+    while (roundEnd <= offlineEnd && !entry._completed) {
+      runChampionshipRound(entry);
+      offlineRounds++;
+      entry.roundStartTime = roundEnd;
+      if (entry.currentRound >= entry.maxRounds && finishChampionship(entry).finalPos === 1) offlineTitles++;
+      roundEnd += entry.roundDurationSec * 1000;
     }
   });
+  if (offlineRounds > 0) {
+    addNotification(`While you were away: ${offlineRounds} rounds raced${offlineTitles ? `, ${offlineTitles} title${offlineTitles > 1 ? 's' : ''} won` : ''}.`, 'info');
+  }
   G.activeChampionships = G.activeChampionships.filter(e => !e._completed);
 
   return elapsed;
@@ -1152,6 +1241,7 @@ function loadGame() {
     _migratePrestige();
     _migrateSingleSeater();
     _migrateDriverLicenses();
+    _migrateRaceEntries();
     return true;
   } catch (e) {
     console.warn('Load failed:', e);

@@ -172,7 +172,7 @@ function renderGarage() {
       UPGRADE_ORDER.forEach(upgId => {
         const upg = UPGRADES[upgId];
         const lvl = car.upgrades[upgId];
-        const cost = getEffectiveUpgradeCost(upgId, lvl);
+        const cost = getEffectiveUpgradeCost(upgId, lvl, car.classId);
         const maxed = lvl >= upg.maxLevel;
         const canAfford = G.money >= cost && !maxed;
         const progress = (lvl / upg.maxLevel) * 100;
@@ -194,16 +194,10 @@ function renderGarage() {
           </div>`;
       });
 
-      // Upgrade multiplier total
-      const totalMult = (
-        UPGRADES.engine.getIncomeMult(car.upgrades.engine) *
-        UPGRADES.aero.getIncomeMult(car.upgrades.aero) *
-        UPGRADES.tyres.getIncomeMult(car.upgrades.tyres) *
-        UPGRADES.brakes.getIncomeMult(car.upgrades.brakes) *
-        UPGRADES.reliability.getIncomeMult(car.upgrades.reliability)
-      ).toFixed(2);
-
+      const baseRating = Math.round(calcCarBaseRating(car));
       const paceMult = calcDriverPaceMult(car);
+      const rating = Math.round(calcCarRating(car));
+      const dnfPct = Math.round(calcDNFChance(car) * 100);
 
       carsHtml += `
         <div class="car-card" style="--cls-color: ${cls.color}">
@@ -213,7 +207,8 @@ function renderGarage() {
               <div class="car-class" style="color: ${cls.color}">${cls.fullName}</div>
             </div>
             <div class="car-stats-right">
-              <div class="car-mult">×${totalMult} upgrades · ×${paceMult.toFixed(2)} pace</div>
+              <div class="car-rating">★ ${rating}</div>
+              <div class="car-mult">car ${baseRating} · driver ×${paceMult.toFixed(2)} · DNF ${dnfPct}%</div>
             </div>
           </div>
           <div class="car-meta">
@@ -298,6 +293,9 @@ function renderChampionships() {
       const timerText = remaining <= 0
         ? (isFinalRound ? 'Championship finishing…' : 'Round finishing…')
         : (isFinalRound ? `Final round ends in ${formatTime(remaining)}` : `Next round in ${formatTime(remaining)}`);
+      const standingPos = getStandingPosition(entry);
+      const rating = car ? Math.round(calcCarRating(car, champDef.format)) : 0;
+      const fieldStr = getFieldStrength(champDef, entry.classId);
 
       activeHtml += `
         <div class="champ-active-card" data-entry="${entry.id}" style="--cls-color: ${champDef.color}">
@@ -306,14 +304,24 @@ function renderChampionships() {
               <div class="champ-name" style="color: ${champDef.color}">${champDef.name}</div>
               <div class="champ-car">${car ? car.name : 'Unknown car'}</div>
             </div>
-            <div class="champ-round">Round ${entry.currentRound + 1}/${entry.maxRounds}</div>
+            <div class="champ-standing-big">
+              <div class="champ-standing-pos">${entry.currentRound > 0 ? 'P' + standingPos : '—'}</div>
+              <div class="champ-round">Round ${entry.currentRound + 1}/${entry.maxRounds}</div>
+            </div>
           </div>
+          <div class="champ-race-info">
+            <span>★ ${rating} vs field ★ ${fieldStr}</span>
+            <span>${entry.points} pts</span>
+            ${renderLastRound(entry)}
+          </div>
+          ${renderResultStrip(entry)}
           <div class="round-progress-wrap">
             <div class="round-progress-bar" style="width: ${roundPct}%"></div>
           </div>
+          ${renderMiniStandings(entry)}
           <div class="champ-footer">
             <span data-live-timer>${timerText}</span>
-            <span>+${formatNumber(entry.repEarned)} REP earned</span>
+            <span>+$${formatNumber(entry.prizeEarned || 0)} · +${formatNumber(entry.repEarned)} REP</span>
             <button class="btn btn-danger withdraw-btn" data-entry="${entry.id}">Withdraw</button>
           </div>
         </div>`;
@@ -331,8 +339,9 @@ function renderChampionships() {
         <option value="">— choose —</option>
         ${G.cars.map(c => {
           const inChamp = c.championshipId !== null;
-          return `<option value="${c.id}" ${inChamp ? 'disabled' : ''}>
-            ${c.name}${inChamp ? ' (in championship)' : ''}
+          const noDriver = !c.driverId;
+          return `<option value="${c.id}" ${inChamp || noDriver ? 'disabled' : ''} ${c.id === _selectedCarForChamp ? 'selected' : ''}>
+            ${c.name} · ★ ${Math.round(calcCarRating(c))}${inChamp ? ' (in championship)' : noDriver ? ' (no driver)' : ''}
           </option>`;
         }).join('')}
       </select>
@@ -347,6 +356,14 @@ function renderChampionships() {
     const canAfford  = G.money >= champDef.entryFee;
     const canEnter   = !hardLocked && canAfford;
     const completions = G.champCompletions[champDef.id] || 0;
+    const selCar = _selectedCarForChamp ? G.cars.find(c => c.id === _selectedCarForChamp) : null;
+    const selFits = selCar && champDef.allowedClasses.includes(selCar.classId);
+    const fieldClass = selFits ? selCar.classId : champDef.allowedClasses[0];
+    const fieldStr = getFieldStrength(champDef, fieldClass);
+    const p1Prize = getRoundPrize(champDef, fieldClass);
+    const selRating = selFits ? Math.round(calcCarRating(selCar, champDef.format)) : null;
+    const best = G.completedChampionships.filter(c => c.definitionId === champDef.id && c.finalPosition)
+      .reduce((m, c) => Math.min(m, c.finalPosition), Infinity);
 
     // Build lock reasons list
     const lockReasons = [];
@@ -363,15 +380,18 @@ function renderChampionships() {
       <div class="champ-card ${hardLocked ? 'champ-locked' : ''}" style="--cls-color: ${champDef.color}">
         <div class="champ-card-header">
           <div class="champ-card-name" style="color: ${hardLocked ? '#555' : champDef.color}">${hardLocked ? '🔒 ' : ''}${champDef.name}</div>
-          ${completions > 0 ? `<div class="champ-completions">✓ ${completions}×</div>` : ''}
+          ${completions > 0 ? `<div class="champ-completions">✓ ${completions}×${best < Infinity ? ` · best P${best}` : ''}</div>` : ''}
         </div>
         <div class="champ-classes">${champDef.allowedClasses.join(', ')}</div>
         <div class="champ-desc">${champDef.description}</div>
         <div class="champ-stats">
           <span>📅 ${champDef.rounds} rounds</span>
           <span>⏱ ${champDef.roundDurationSec}s/round</span>
-          <span>📈 +${champDef.repPerRound} REP/round</span>
-          <span>💹 +${Math.round(champDef.incomeBonus * 100)}% income</span>
+          <span>${champDef.format === 'endurance' ? '🌙 Endurance' : '⚡ Sprint'}</span>
+          <span>🌧 ${Math.round((champDef.wetChance || 0) * 100)}% wet</span>
+          <span>🏁 Field ★ ${fieldStr}${selRating !== null ? ` · yours ★ ${selRating}` : ''}</span>
+          <span>💰 P1 $${formatNumber(p1Prize)}/round</span>
+          <span>📈 P1 +${champDef.repPerRound} REP</span>
         </div>
         ${lockReasons.length > 0 ? `<div class="champ-lock-reasons">${lockReasons.join('')}</div>` : ''}
         <button class="btn enter-champ-btn ${canEnter ? '' : 'disabled'}"
@@ -387,6 +407,7 @@ function renderChampionships() {
   // Bind events
   container.querySelector('#champ-car-select').addEventListener('change', e => {
     _selectedCarForChamp = e.target.value || null;
+    renderChampionships();
   });
 
   container.querySelectorAll('.enter-champ-btn:not([disabled])').forEach(btn => {
@@ -409,6 +430,41 @@ function renderChampionships() {
       renderChampionships();
     });
   });
+}
+
+function renderLastRound(entry) {
+  const r = entry.lastRound;
+  if (!r) return '<span class="champ-last">Lights out soon</span>';
+  const wet = r.wet ? ' 🌧' : '';
+  if (r.dns) return `<span class="champ-last bad">Last: DNS${wet}</span>`;
+  if (r.dnf) return `<span class="champ-last bad">Last: DNF${wet}</span>`;
+  return `<span class="champ-last ${r.pos <= 3 ? 'good' : ''}">Last: P${r.pos}${wet} · +$${formatNumber(r.prize)}</span>`;
+}
+
+function renderResultStrip(entry) {
+  if (!entry.results || entry.results.length === 0) return '';
+  const cells = entry.results.map(res => {
+    const cls = typeof res !== 'number' ? 'res-dnf' : res === 1 ? 'res-win' : res <= 3 ? 'res-podium' : res <= 10 ? 'res-points' : '';
+    return `<span class="res-cell ${cls}">${typeof res === 'number' ? res : res}</span>`;
+  }).join('');
+  return `<div class="result-strip">${cells}</div>`;
+}
+
+// Top 3 plus the rows around the player
+function renderMiniStandings(entry) {
+  if (entry.currentRound === 0) return '';
+  const rows = getStandings(entry);
+  const me = rows.findIndex(r => r.isPlayer);
+  const show = new Set([0, 1, 2, me - 1, me, me + 1].filter(i => i >= 0 && i < rows.length));
+  let html = '<div class="mini-standings">';
+  let last = -1;
+  [...show].sort((a, b) => a - b).forEach(i => {
+    if (last >= 0 && i > last + 1) html += '<div class="ms-gap">⋯</div>';
+    const r = rows[i];
+    html += `<div class="ms-row ${r.isPlayer ? 'ms-me' : ''}"><span class="ms-pos">P${i + 1}</span><span class="ms-name">${r.name}</span><span class="ms-pts">${r.points}</span></div>`;
+    last = i;
+  });
+  return html + '</div>';
 }
 
 // ─── Driver License Helper ────────────────────────────────────────────────────
@@ -1301,7 +1357,7 @@ function updateGarageLive() {
       const lvl = car.upgrades[upgId];
       const maxed = lvl >= UPGRADES[upgId].maxLevel;
       if (!maxed) {
-        const cost = getUpgradeCost(upgId, lvl);
+        const cost = getEffectiveUpgradeCost(upgId, lvl, car.classId);
         const canAfford = G.money >= cost;
         btn.textContent = '$' + formatNumber(cost);
         btn.disabled = !canAfford;
@@ -1343,8 +1399,11 @@ function updateGarageLive() {
 
 // ─── Targeted in-place championship updates ───────────────────────────────────
 
+let _champRenderSig = '';
 function updateChampLive() {
   if (_activeTab !== 'championships') return;
+  const sig = G.activeChampionships.map(e => e.id + ':' + e.currentRound).join('|');
+  if (sig !== _champRenderSig) { _champRenderSig = sig; renderChampionships(); return; }
 
   const now = Date.now();
   G.activeChampionships.forEach(entry => {

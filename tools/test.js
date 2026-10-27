@@ -58,6 +58,54 @@ test('Save/load round-trips and migrates drivers without license data', () => {
   assert(g.run(`G.drivers.every(d => d.licenses.includes('GT4') && d.licensePoints.F1 === 0)`), 'migration should add licenses');
 });
 
+test('Entering a championship requires a driver', () => {
+  const { g, car } = setup();
+  assert(g.run(`enterChampionship('gt4_regional', '${car}').ok`) === false, 'should need a driver');
+});
+
+test('A round produces a position, points, prize and standings', () => {
+  const { g, a, car } = setup();
+  g.run(`assignDriver('${a}', '${car}'); enterChampionship('gt4_regional', '${car}');`);
+  const before = g.run('G.money');
+  g.tickFor(61);
+  const e = g.run('G.activeChampionships[0]');
+  assert(e.currentRound === 1 && e.results.length === 1, 'one round should have run');
+  const r = e.lastRound;
+  assert(r.dnf || (r.pos >= 1 && r.pos <= 13), 'position in range');
+  if (!r.dnf) assert(g.run('G.money') - before === r.prize && r.prize > 0, 'prize paid');
+  const st = g.run('getStandings(G.activeChampionships[0])');
+  assert(st.length === 13 && st.filter(x => x.isPlayer).length === 1, 'standings include 12 AI + player');
+  assert(st.reduce((n, x) => n + x.points, 0) === 25 + 18 + 15 + 12 + 10 + 8 + 6 + 4 + 2 + 1, 'all points awarded once');
+});
+
+test('Better cars finish higher on average', () => {
+  const { g, a, car } = setup();
+  g.run(`assignDriver('${a}', '${car}')`);
+  const avg = lv => g.run(`(() => {
+    UPGRADE_ORDER.forEach(u => G.cars[0].upgrades[u] = ${lv});
+    let sum = 0;
+    for (let k = 0; k < 20; k++) {
+      enterChampionship('gt4_regional', G.cars[0].id);
+      const e = G.activeChampionships[0];
+      while (!e._completed) { runChampionshipRound(e); if (e.currentRound >= e.maxRounds) finishChampionship(e); }
+      G.activeChampionships = [];
+      sum += G.completedChampionships[G.completedChampionships.length - 1].finalPosition;
+    }
+    return sum / 20;
+  })()`);
+  const slow = avg(0), fast = avg(8);
+  assert(fast < slow - 3, `expected lv8 (${fast}) well ahead of lv0 (${slow})`);
+});
+
+test('Completed championship records final position and pays standings bonus', () => {
+  const { g, a, car } = setup();
+  g.run(`assignDriver('${a}', '${car}'); UPGRADE_ORDER.forEach(u => G.cars[0].upgrades[u] = 12);`);
+  finishChamp(g, 'gt4_regional', car);
+  const c = g.run('G.completedChampionships[0]');
+  assert(c.finalPosition === 1, 'maxed car should win GT4 Cup, got P' + c.finalPosition);
+  assert(c.prizeEarned > 2000 * 8 * 0.5, 'prize should include standings bonus');
+});
+
 let failed = 0;
 for (const t of tests) {
   try { t.fn(); console.log('PASS', t.name); }

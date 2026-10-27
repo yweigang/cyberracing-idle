@@ -539,6 +539,47 @@ select { font-family: inherit; }
   transition: width 0.5s linear;
 }
 
+.champ-standing-big { text-align: right; }
+.champ-standing-pos { font-family: var(--font-mono); font-size: 26px; font-weight: 700; color: var(--cls-color, var(--cyan)); line-height: 1; }
+.champ-standing-big .champ-round { font-size: 12px; }
+.car-rating { font-family: var(--font-mono); font-size: 18px; color: var(--cyan); }
+
+.champ-race-info {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  font-size: 12px;
+  color: var(--text-2);
+  margin-bottom: 8px;
+  font-family: var(--font-mono);
+}
+.champ-last.good { color: var(--green); }
+.champ-last.bad  { color: var(--red); }
+
+.result-strip { display: flex; flex-wrap: wrap; gap: 3px; margin-bottom: 8px; }
+.res-cell {
+  min-width: 22px; text-align: center; font-family: var(--font-mono); font-size: 10px;
+  padding: 2px 3px; border-radius: 3px; background: var(--bg-4); color: var(--text-2);
+}
+.res-cell.res-win    { background: #3a3000; color: var(--gold); }
+.res-cell.res-podium { background: #0a2a1a; color: var(--green); }
+.res-cell.res-points { background: #0a1a2a; color: var(--cyan); }
+.res-cell.res-dnf    { background: #2a0a12; color: var(--red); }
+
+.mini-standings {
+  background: var(--bg-3);
+  border-radius: var(--radius);
+  padding: 6px 8px;
+  margin-bottom: 10px;
+  font-size: 12px;
+}
+.ms-row { display: flex; gap: 8px; padding: 1px 0; color: var(--text-2); }
+.ms-row.ms-me { color: var(--cyan); font-weight: 600; }
+.ms-pos { width: 30px; font-family: var(--font-mono); }
+.ms-name { flex: 1; }
+.ms-pts { font-family: var(--font-mono); }
+.ms-gap { color: var(--text-3); text-align: center; line-height: 1; }
+
 .champ-footer {
   display: flex;
   align-items: center;

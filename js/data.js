@@ -13,6 +13,7 @@ const CAR_CLASSES = [
     baseCost: 10000,
     baseIncomePerLap: 500,
     lapTimeSec: 10,
+    upgradeCostMult: 1,
     maxOwned: 5,
     color: '#4a8fff',
     description: 'Entry-level GT racing. Every champion starts here.',
@@ -28,6 +29,7 @@ const CAR_CLASSES = [
     baseCost: 50000,
     baseIncomePerLap: 2000,
     lapTimeSec: 8,
+    upgradeCostMult: 2.5,
     maxOwned: 4,
     color: '#00aaff',
     description: 'GT World Challenge contender. Real prize money starts here.',
@@ -43,6 +45,7 @@ const CAR_CLASSES = [
     baseCost: 250000,
     baseIncomePerLap: 8000,
     lapTimeSec: 7,
+    upgradeCostMult: 6,
     maxOwned: 3,
     color: '#00d4ff',
     description: 'Entry-level prototype racing in ELMS and Asian Le Mans. A big step up from GT.',
@@ -58,6 +61,7 @@ const CAR_CLASSES = [
     baseCost: 1000000,
     baseIncomePerLap: 25000,
     lapTimeSec: 6,
+    upgradeCostMult: 15,
     maxOwned: 2,
     color: '#ff8800',
     description: 'Prototype racing in WEC and ELMS. Speed in a different language.',
@@ -73,6 +77,7 @@ const CAR_CLASSES = [
     baseCost: 5000000,
     baseIncomePerLap: 90000,
     lapTimeSec: 5,
+    upgradeCostMult: 40,
     maxOwned: 2,
     color: '#ff4400',
     description: 'WEC Hypercar — the pinnacle of endurance racing.',
@@ -89,6 +94,7 @@ const CAR_CLASSES = [
     baseCost: 75000,
     baseIncomePerLap: 2500,
     lapTimeSec: 8,
+    upgradeCostMult: 3,
     maxOwned: 3,
     color: '#ff6699',
     description: 'Entry-level open-wheel racing. The bottom rung of the single-seater ladder.',
@@ -105,6 +111,7 @@ const CAR_CLASSES = [
     baseCost: 500000,
     baseIncomePerLap: 12000,
     lapTimeSec: 7,
+    upgradeCostMult: 10,
     maxOwned: 2,
     color: '#ff4488',
     description: 'Serious single-seater competition. Where future champions are forged.',
@@ -121,6 +128,7 @@ const CAR_CLASSES = [
     baseCost: 3000000,
     baseIncomePerLap: 50000,
     lapTimeSec: 5,
+    upgradeCostMult: 30,
     maxOwned: 2,
     color: '#ff2266',
     description: 'The final proving ground before F1. Elite talent required.',
@@ -137,6 +145,7 @@ const CAR_CLASSES = [
     baseCost: 25000000,
     baseIncomePerLap: 500000,
     lapTimeSec: 4,
+    upgradeCostMult: 100,
     maxOwned: 2,
     color: '#ff0055',
     description: 'The ultimate motorsport challenge. Formula One.',
@@ -202,8 +211,8 @@ const UPGRADES = {
     maxLevel: 20,
     baseCost: 2500,
     costMult: 1.8,
-    description: '+5% income/level',
-    getIncomeMult: (lvl) => 1 + lvl * 0.05,
+    description: '+2 rating/level',
+    ratingPerLevel: 2,
   },
   aero: {
     id: 'aero',
@@ -212,8 +221,8 @@ const UPGRADES = {
     maxLevel: 20,
     baseCost: 2000,
     costMult: 1.7,
-    description: '+3% income/level',
-    getIncomeMult: (lvl) => 1 + lvl * 0.03,
+    description: '+1.5 rating/level',
+    ratingPerLevel: 1.5,
   },
   tyres: {
     id: 'tyres',
@@ -222,8 +231,8 @@ const UPGRADES = {
     maxLevel: 20,
     baseCost: 1500,
     costMult: 1.6,
-    description: '+4% income/level',
-    getIncomeMult: (lvl) => 1 + lvl * 0.04,
+    description: '+1.5 rating/level',
+    ratingPerLevel: 1.5,
   },
   brakes: {
     id: 'brakes',
@@ -232,8 +241,8 @@ const UPGRADES = {
     maxLevel: 20,
     baseCost: 1800,
     costMult: 1.65,
-    description: '+2% income/level',
-    getIncomeMult: (lvl) => 1 + lvl * 0.02,
+    description: '+1 rating/level',
+    ratingPerLevel: 1,
   },
   reliability: {
     id: 'reliability',
@@ -242,13 +251,9 @@ const UPGRADES = {
     maxLevel: 20,
     baseCost: 3000,
     costMult: 1.9,
-    description: 'Reduces failures; bonus income after lv10',
-    // Level 0 = 80% efficiency (20% failure). Level 10 = 100%. Levels 11-20 add +1.5% income.
-    getIncomeMult: (lvl) => {
-      const efficiency = Math.min(1.0, 0.80 + lvl * 0.02);
-      const bonus = lvl > 10 ? 1 + (lvl - 10) * 0.015 : 1;
-      return efficiency * bonus;
-    },
+    description: '-1% DNF chance/level; +1 rating/level after Lv 10',
+    // DNF chance per round: 10% at Lv 0, -1% per level, floor 1% (doubled in endurance)
+    ratingPerLevel: 0,
   },
 };
 
@@ -268,8 +273,10 @@ const CHAMPIONSHIPS = [
     repRequired: 0,
     prerequisiteChampionship: null,
     repPerRound: 100,
-    incomeBonus: 0.15,
-    finalBonusMult: 2.5,
+    format: 'sprint',
+    fieldStrength: 110,
+    prizeMult: 4,
+    wetChance: 0.15,
     color: '#4a8fff',
     description: '8-round regional sprint series. Perfect for a new team.',
   },
@@ -284,8 +291,10 @@ const CHAMPIONSHIPS = [
     repRequired: 800,
     prerequisiteChampionship: 'gt4_regional',
     repPerRound: 200,
-    incomeBonus: 0.20,
-    finalBonusMult: 3.0,
+    format: 'sprint',
+    fieldStrength: 160,
+    prizeMult: 5,
+    wetChance: 0.2,
     color: '#00aaff',
     description: '10-round series mixing sprint and endurance formats.',
   },
@@ -300,8 +309,10 @@ const CHAMPIONSHIPS = [
     repRequired: 3500,
     prerequisiteChampionship: 'gt_world_challenge',
     repPerRound: 350,
-    incomeBonus: 0.25,
-    finalBonusMult: 3.5,
+    format: 'endurance',
+    fieldStrength: 200,
+    prizeMult: 10,
+    wetChance: 0.15,
     color: '#00d4ff',
     description: 'Multi-class endurance racing across 12 rounds.',
   },
@@ -316,8 +327,10 @@ const CHAMPIONSHIPS = [
     repRequired: 5000,
     prerequisiteChampionship: 'gt_world_challenge',
     repPerRound: 400,
-    incomeBonus: 0.30,
-    finalBonusMult: 4.0,
+    format: 'endurance',
+    fieldStrength: 210,
+    prizeMult: 15,
+    wetChance: 0.25,
     color: '#ff8800',
     description: '6-round endurance series. Includes a night race bonus.',
   },
@@ -332,8 +345,10 @@ const CHAMPIONSHIPS = [
     repRequired: 20000,
     prerequisiteChampionship: ['imsa_weathertech', 'elms'], // either one
     repPerRound: 600,
-    incomeBonus: 0.35,
-    finalBonusMult: 5.0,
+    format: 'endurance',
+    fieldStrength: 260,
+    prizeMult: 20,
+    wetChance: 0.2,
     color: '#ff4400',
     description: 'The world\'s greatest endurance championship.',
   },
@@ -349,8 +364,10 @@ const CHAMPIONSHIPS = [
     repRequired: 0,
     prerequisiteChampionship: null,
     repPerRound: 100,
-    incomeBonus: 0.15,
-    finalBonusMult: 2.5,
+    format: 'sprint',
+    fieldStrength: 150,
+    prizeMult: 2,
+    wetChance: 0.2,
     color: '#ff6699',
     description: 'The starting point of the single-seater ladder. 8 rounds of tight F4 action.',
     pathway: 'single_seater',
@@ -366,8 +383,10 @@ const CHAMPIONSHIPS = [
     repRequired: 3000,
     prerequisiteChampionship: 'formula_regional',
     repPerRound: 200,
-    incomeBonus: 0.20,
-    finalBonusMult: 3.0,
+    format: 'sprint',
+    fieldStrength: 220,
+    prizeMult: 4,
+    wetChance: 0.2,
     color: '#ff4488',
     description: 'The proving ground for the next generation of F1 stars. 12 rounds.',
     pathway: 'single_seater',
@@ -383,8 +402,10 @@ const CHAMPIONSHIPS = [
     repRequired: 15000,
     prerequisiteChampionship: 'formula_3_championship',
     repPerRound: 400,
-    incomeBonus: 0.30,
-    finalBonusMult: 4.0,
+    format: 'sprint',
+    fieldStrength: 280,
+    prizeMult: 5,
+    wetChance: 0.2,
     color: '#ff2266',
     description: 'One step from the pinnacle. Prove yourself here to reach F1.',
     pathway: 'single_seater',
@@ -400,12 +421,37 @@ const CHAMPIONSHIPS = [
     repRequired: 80000,
     prerequisiteChampionship: 'formula_2_championship',
     repPerRound: 500,
-    incomeBonus: 0.50,
-    finalBonusMult: 6.0,
+    format: 'sprint',
+    fieldStrength: 350,
+    prizeMult: 4,
+    wetChance: 0.15,
     color: '#ff0055',
     description: 'The pinnacle of motorsport. 24 races across the globe.',
     pathway: 'single_seater',
   },
+];
+
+// ─── Race Simulation ─────────────────────────────────────────────────────────
+
+// Championship points per finishing position (P1 first)
+const POINTS_TABLE = [25, 18, 15, 12, 10, 8, 6, 4, 2, 1];
+
+// Share of the P1 round prize/REP paid per finishing position (last value repeats)
+const PRIZE_FACTORS = [1, 0.8, 0.66, 0.55, 0.46, 0.39, 0.33, 0.28, 0.24, 0.2, 0.15, 0.1];
+
+// End-of-championship bonus by final standing, as a share of (P1 round prize × rounds)
+const STANDING_BONUS = [0.5, 0.3, 0.2, 0.1, 0.05];
+
+const FIELD_SIZE = 12;          // AI rivals per class in a championship
+const FIELD_SPREAD = 0.36;      // AI ratings span fieldStrength × (1 ± spread/2)
+const MULTICLASS_STEP = 15;     // field strength added per class tier above the series' lowest class
+const RACE_NOISE = 0.07;        // per-round performance variance (std dev, before consistency)
+
+const RIVAL_TEAMS = [
+  'Apex Dynamics', 'Redline Works', 'Nova Motorsport', 'Iron Falcon', 'Stratos Racing',
+  'Velocity Lab', 'Kaiju Racing', 'Bluewave GP', 'Corsa Nera', 'Helix Autosport',
+  'Northstar Racing', 'Vortex Engineering', 'Sakura Speed', 'Crimson Arrow', 'Atlas Racing',
+  'Phantom GP', 'Zenith Motorsport', 'Neon Drift', 'Titan Racing', 'Eclipse Racing',
 ];
 
 // ─── Drivers ──────────────────────────────────────────────────────────────────
@@ -532,9 +578,11 @@ function getGarageNextUpgrade(currentLevel) {
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-function getUpgradeCost(upgradeId, currentLevel) {
+function getUpgradeCost(upgradeId, currentLevel, classId) {
   const upg = UPGRADES[upgradeId];
-  return Math.floor(upg.baseCost * Math.pow(upg.costMult, currentLevel));
+  const cls = classId ? getCarClassById(classId) : null;
+  const classMult = (cls && cls.upgradeCostMult) || 1;
+  return Math.floor(upg.baseCost * Math.pow(upg.costMult, currentLevel) * classMult);
 }
 
 function getCarClassById(id) {
