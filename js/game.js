@@ -22,6 +22,7 @@ function createDefaultState() {
     garageLevel: 1,
     nextCarId: 2,
     nextDriverId: 1,
+    nextEntryId: 1,            // championship entries and registrations (saved, so ids stay unique across reloads)
     cars: [
       {
         id: 'car_1',
@@ -431,7 +432,11 @@ function upgradeGarage() {
 
 // ─── Championships ────────────────────────────────────────────────────────────
 
-let _champIdCounter = 1;
+// Next id for a championship entry or registration. The counter lives in the save:
+// a counter that restarted on every reload handed out ids already in use.
+function _newEntryId(prefix) {
+  return prefix + G.nextEntryId++;
+}
 
 function hasCompletedChampionship(champId) {
   return (G.champCompletions[champId] || 0) > 0;
@@ -490,7 +495,7 @@ function enterChampionship(definitionId, carId, at = Date.now(), prepaid = false
   if (!prepaid) G.money -= champDef.entryFee;
 
   const entry = {
-    id: 'champ_entry_' + _champIdCounter++,
+    id: _newEntryId('champ_entry_'),
     definitionId,
     carId,
     currentRound: 0,
@@ -549,7 +554,7 @@ function registerForNextSeason(definitionId, carId) {
   if (getRegistration(carId)) return { ok: false, msg: `${car.name} is already registered for next season.` };
   if (G.money < champDef.entryFee) return { ok: false, msg: 'Not enough money for entry fee.' };
   G.money -= champDef.entryFee;
-  G.registrations.push({ id: 'reg_' + _champIdCounter++, definitionId, carId, fee: champDef.entryFee });
+  G.registrations.push({ id: _newEntryId('reg_'), definitionId, carId, fee: champDef.entryFee });
   return { ok: true };
 }
 
@@ -1854,6 +1859,7 @@ function loadGame() {
     G.cars.forEach(c => { if (!c.coDriverIds) c.coDriverIds = []; }); // saves before driver lineups
     _migrateBoP();
     _migrateDuplicateNames();
+    _migrateEntryIds();
     return true;
   } catch (e) {
     console.warn('Load failed:', e);
@@ -1908,6 +1914,25 @@ function _migrateBoP() {
     G.money += refund;
     addNotification(`Cars now run under Balance of Performance. Car upgrades were refunded: +$${formatNumber(refund)}.`, 'success');
   }
+}
+
+// Saves from before the entry counter was saved: entries made after a reload could reuse
+// an id, so the UI updated the wrong card and withdraw/sell could hit the wrong entry.
+// Gives duplicates new ids, relinks each car to its own entry and moves the counter
+// past every id in use.
+function _migrateEntryIds() {
+  const num = id => +(String(id).match(/(\d+)$/) || [0, 0])[1];
+  const all = [...G.activeChampionships, ...(G.registrations || [])];
+  G.nextEntryId = Math.max(G.nextEntryId || 1, ...all.map(e => num(e.id) + 1));
+  const seen = new Set();
+  all.forEach(e => {
+    if (seen.has(e.id)) e.id = _newEntryId(e.id.startsWith('reg_') ? 'reg_' : 'champ_entry_');
+    seen.add(e.id);
+  });
+  G.cars.forEach(car => {
+    const entry = G.activeChampionships.find(e => e.carId === car.id);
+    car.championshipId = entry ? entry.id : null;
+  });
 }
 
 // Saves from before unique names: later drivers and staff that share a name get a new one

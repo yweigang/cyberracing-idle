@@ -513,6 +513,26 @@ test('Selling a racing car abandons its championship and refunds its registratio
   assert(g.run('G.money') - m === value + 5000, 'sale value plus the registration refund');
 });
 
+test('Championship entries keep unique ids across reloads', () => {
+  const { g, a, b, car } = setup();
+  g.run(`G.reputation = 1000; upgradeGarage(); buyCar('GT4'); assignDriver('${a}', '${car}'); assignDriver('${b}', G.cars[1].id);`);
+  g.run(`enterChampionship('gt4_regional', '${car}'); saveGame(); loadGame(); enterChampionship('gt4_regional', G.cars[1].id);`);
+  const ids = g.run('G.activeChampionships.map(e => e.id)');
+  assert(ids.length === 2 && ids[0] !== ids[1], 'ids differ after a reload: ' + ids);
+});
+
+test('Saves with duplicate entry ids are repaired', () => {
+  const { g, a, b, car } = setup();
+  g.run(`G.reputation = 1000; upgradeGarage(); buyCar('GT4'); assignDriver('${a}', '${car}'); assignDriver('${b}', G.cars[1].id);
+    enterChampionship('gt4_regional', '${car}'); enterChampionship('gt4_regional', G.cars[1].id);
+    G.activeChampionships[1].id = G.activeChampionships[0].id; G.cars[1].championshipId = G.activeChampionships[0].id;
+    G.nextEntryId = 1; saveGame(); loadGame();`);
+  const ids = g.run('G.activeChampionships.map(e => e.id)');
+  assert(ids[0] !== ids[1], 'duplicate id replaced');
+  assert(g.run('G.cars.every(c => G.activeChampionships.find(e => e.id === c.championshipId).carId === c.id)'), 'each car points at its own entry');
+  assert(g.run('G.nextEntryId') > Math.max(...ids.map(i => +i.match(/\d+$/)[0])), 'counter moved past ids in use');
+});
+
 let failed = 0;
 for (const t of tests) {
   try { t.fn(); console.log('PASS', t.name); }
