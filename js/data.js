@@ -541,11 +541,25 @@ const DRIVER_FIRST_NAMES = [
   'Alex', 'Jordan', 'Nico', 'Lena', 'Riku', 'Sara', 'Theo', 'Dani', 'Kira', 'Oscar',
   'Maya', 'Lars', 'Vance', 'Iris', 'Eli', 'Mira', 'Jonas', 'Talia', 'Ruben', 'Anya',
   'Felix', 'Noor', 'Emil', 'Sofia', 'Kai', 'Leona', 'Mateo', 'Yara', 'Hugo', 'Ines',
+  'Aiden', 'Bianca', 'Caspar', 'Dalia', 'Elias', 'Freya', 'Gael', 'Hana', 'Ivo', 'Jana',
+  'Kenji', 'Lucia', 'Milo', 'Nadia', 'Orin', 'Petra', 'Quentin', 'Rosa', 'Silas', 'Tamsin',
+  'Ugo', 'Vera', 'Wes', 'Xenia', 'Yusuf', 'Zara', 'Arlo', 'Beatriz', 'Cyrus', 'Delphine',
+  'Esme', 'Finn', 'Greta', 'Hamza', 'Isla', 'Joaquin', 'Katja', 'Leif', 'Marisol', 'Nils',
+  'Odette', 'Pavel', 'Rhea', 'Soren', 'Thea', 'Umar', 'Valentina', 'Wren', 'Yannis', 'Zoe',
+  'Anders', 'Celeste', 'Dario', 'Elodie', 'Florin', 'Gwen', 'Haruto', 'Ilse', 'Jasper', 'Kalani',
+  'Linnea', 'Marek', 'Nell', 'Otto', 'Priya', 'Remy', 'Saskia', 'Tobias', 'Viggo', 'Wilhelmina',
 ];
 const DRIVER_LAST_NAMES = [
   'Mercer', 'Kane', 'Voss', 'Carver', 'Tanaka', 'Blaine', 'Marsh', 'Reyes', 'Stone', 'Flynn',
   'Cruz', 'Brandt', 'Cole', 'Park', 'Dorn', 'Halden', 'Okafor', 'Lindqvist', 'Moreau', 'Sato',
   'Varga', 'Quinn', 'Ashby', 'Delacroix', 'Novak', 'Brenner', 'Castell', 'Ivers', 'Rhee', 'Thorne',
+  'Albrecht', 'Barrow', 'Calloway', 'Dunmore', 'Ekström', 'Falk', 'Garrow', 'Holm', 'Ishikawa', 'Jansen',
+  'Kowal', 'Lacroix', 'Mendes', 'Nakamura', 'Oduya', 'Pellegrin', 'Quist', 'Rasmussen', 'Strand', 'Tavares',
+  'Ulrich', 'Vance', 'Wexler', 'Yilmaz', 'Zeller', 'Abara', 'Bexley', 'Corvin', 'Draper', 'Estrada',
+  'Fenwick', 'Galloway', 'Hargrove', 'Ibarra', 'Jessop', 'Kirkland', 'Lowell', 'Marchetti', 'Northam', 'Oakes',
+  'Penrose', 'Ravel', 'Selby', 'Thackeray', 'Ueda', 'Valdez', 'Whitlock', 'Yardley', 'Zamora', 'Achterberg',
+  'Blackwood', 'Castellan', 'Davenport', 'Elsworth', 'Fairbanks', 'Greaves', 'Holloway', 'Ingram', 'Kessler', 'Lindahl',
+  'Moretti', 'Nordberg', 'Okonkwo', 'Prescott', 'Radcliffe', 'Sinclair', 'Tremblay', 'Underwood', 'Vasquez', 'Winslow',
 ];
 
 // ─── Prestige Shop ────────────────────────────────────────────────────────────
@@ -878,8 +892,16 @@ const RE_STAT_DESCS = {
 const STAFF_FIRST_NAMES = [
   'Marco', 'James', 'Elena', 'Yuki', 'Chris', 'Sofia', 'Neil', 'Ana', 'Raj', 'Tom',
   'Ingrid', 'Luca', 'Mei', 'Ben', 'Natasha', 'Pieter', 'Grace', 'Omar', 'Hanna', 'Diego',
+  'Adele', 'Bruno', 'Carmen', 'Dmitri', 'Eva', 'Frank', 'Gloria', 'Henrik', 'Ivana', 'Jack',
+  'Karin', 'Leo', 'Monica', 'Nathan', 'Olga', 'Paul', 'Rita', 'Stefan', 'Tara', 'Victor',
+  'Agnes', 'Bernard', 'Clara', 'Dennis', 'Edith', 'Gustav', 'Helena', 'Igor', 'Julia', 'Klaus',
+  'Lorna', 'Martin', 'Nora', 'Oliver', 'Pia', 'Rolf', 'Simone', 'Ted', 'Ulla', 'Walter',
 ];
 const STAFF_LAST_NAMES = [
   'Wright', 'Kovač', 'Hara', 'Barlow', 'Andrade', 'Hartley', 'Santos', 'Mehta', 'Calloway', 'Bauer',
   'Ferrante', 'Chen', 'Archer', 'Volkov', 'Lindgren', 'Okoro', 'Whitfield', 'Navarro', 'Strand', 'Keller',
+  'Abbott', 'Brook', 'Carlsen', 'Duarte', 'Ellis', 'Fischer', 'Gruber', 'Hoffmann', 'Iversen', 'Jaeger',
+  'Kerr', 'Lund', 'Mattsson', 'Nolan', 'Ortega', 'Pryce', 'Rinaldi', 'Schuster', 'Toft', 'Vogel',
+  'Walsh', 'Aldridge', 'Bergman', 'Costa', 'Dahl', 'Engel', 'Foster', 'Galvez', 'Hale', 'Imhof',
+  'Jarvis', 'Krause', 'Lambert', 'Morrow', 'Nyberg', 'Osei', 'Pike', 'Quiroga', 'Rowe', 'Sandoval',
 ];

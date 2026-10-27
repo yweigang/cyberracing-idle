@@ -783,12 +783,18 @@ function _takenNames(extra = []) {
   return new Set([...G.drivers, ...staff, ...extra].map(p => p.name));
 }
 
-// A random "First Last" nobody on the team has. If every combination is taken,
-// the name gets a number.
+// A random "First Last" nobody on the team has, preferring first and last names no
+// one on the team uses yet. If every combination is taken, the name gets a number.
 function _uniqueName(firstNames, lastNames, extraTaken = []) {
   const taken = _takenNames(extraTaken);
+  const parts = [...taken].map(n => n.split(' '));
+  const fresh = (list, i) => {
+    const used = new Set(parts.map(p => p[i]));
+    const open = list.filter(x => !used.has(x));
+    return open.length ? open : list;
+  };
   const pick = list => list[Math.floor(Math.random() * list.length)];
-  let name = pick(firstNames) + ' ' + pick(lastNames);
+  let name = pick(fresh(firstNames, 0)) + ' ' + pick(fresh(lastNames, 1));
   for (let i = 0; i < 200 && taken.has(name); i++) name = pick(firstNames) + ' ' + pick(lastNames);
   if (!taken.has(name)) return name;
   let n = 2;
