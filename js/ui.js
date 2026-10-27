@@ -39,6 +39,7 @@ function renderActivePanel() {
     case 'drivers':       renderDrivers(); break;
     case 'sponsors':      renderSponsors(); break;
     case 'staff':         renderStaff(); break;
+    case 'hq':            renderHQ(); break;
     case 'prestige':      renderPrestige(); break;
   }
 }
@@ -1248,8 +1249,8 @@ function renderPrestige() {
     <div class="prestige-info">
       <div class="prestige-pp">You have <span class="pp-value">${G.prestigePoints} PP</span></div>
       <div class="prestige-gain">Resetting now grants <span class="pp-gain">+${ppGain} PP</span>
-        <span class="prestige-warning">(titles and podiums since the last reset, plus 1 PP per ${formatNumber(PRESTIGE_REP_PER_PP)} REP gained)</span></div>
-      <div class="prestige-warning">Starts the team over: $5,000, one stock GT4 (plus a car per Development Token), no sponsors. Drivers, licenses, REP, garage, staff and PP stay.
+        <span class="prestige-warning">(titles and podiums since the last reset, 1 PP per ${formatNumber(PRESTIGE_REP_PER_PP)} REP gained, ${HQ_PP_PER_LEVEL} PP per HQ level)</span></div>
+      <div class="prestige-warning">Starts the team over: $5,000, one stock GT4 (plus a car per Development Token), no sponsors, HQ rebuilt. Drivers, licenses, REP, garage, staff and PP stay.
         ${(G.prestige.prestigeCount || 0) === 0 ? '<br>Your first reset unlocks the <b>Single-Seater Pathway</b> (F4 → F1).' : ''}</div>
       <button class="btn btn-prestige ${canP ? '' : 'disabled'}" id="prestige-btn" ${canP ? '' : 'disabled'}>
         ${!canP ? `Earn ${PRESTIGE_MIN_GAIN} PP to reset · ${ppGain} so far` : _confirmingPrestige ? `Confirm reset — +${ppGain} PP` : `Prestige — +${ppGain} PP`}
@@ -1350,6 +1351,66 @@ function formatClock(sec) {
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 }
 
+// ─── Team HQ Panel ────────────────────────────────────────────────────────────
+
+function _hqEffectText(id) {
+  const lvl = getHQLevel(id);
+  if (id === 'simulator')   return `+${(lvl * 1.5).toFixed(1)}% race rating`;
+  if (id === 'composites')  return `-${lvl * 3}% upgrade costs`;
+  if (id === 'hospitality') return `+${lvl * 5}% sponsor income`;
+  return '';
+}
+
+function renderHQ() {
+  const container = document.getElementById('panel-hq');
+  let html = '<div class="section-header">TEAM HQ</div>';
+  if (!isHQUnlocked()) {
+    html += `<div class="empty-state">🔒 Team HQ unlocks at ${formatNumber(HQ_UNLOCK_REP)} REP (you have ${formatNumber(G.reputation)}).</div>`;
+    container.innerHTML = html;
+    return;
+  }
+  html += `<div class="hq-intro">Invest prize money in facilities. Each level is worth ${HQ_PP_PER_LEVEL} PP when you prestige
+    (currently <span class="pp-gain">+${getHQPrestigePoints()} PP</span>); facilities are rebuilt each run.</div>
+    <div class="hq-grid">`;
+  HQ_FACILITIES.forEach(f => {
+    const lvl = getHQLevel(f.id);
+    const maxed = f.maxLevel !== null && lvl >= f.maxLevel;
+    const cost = getHQCost(f.id);
+    const canBuy = !maxed && G.money >= cost;
+    html += `
+      <div class="hq-card">
+        <div class="hq-head"><span class="hq-icon">${f.icon}</span><span class="hq-name">${f.name}</span>
+          <span class="hq-level">Lv ${lvl}${f.maxLevel !== null ? '/' + f.maxLevel : ''}</span></div>
+        <div class="hq-desc">${f.description}</div>
+        <div class="hq-effect">Now: ${lvl > 0 ? _hqEffectText(f.id) : 'no effect yet'}</div>
+        <button class="btn hq-buy-btn ${canBuy ? '' : 'disabled'}" data-hq="${f.id}" ${canBuy ? '' : 'disabled'}>
+          ${maxed ? 'MAX' : '$' + formatNumber(cost)}
+        </button>
+      </div>`;
+  });
+  html += '</div>';
+  container.innerHTML = html;
+
+  container.querySelectorAll('.hq-buy-btn:not([disabled])').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const result = buyHQ(btn.dataset.hq);
+      if (!result.ok) addNotification(result.msg, 'error');
+      renderHQ();
+    });
+  });
+}
+
+// Keep HQ buy buttons in sync with money without rebuilding the panel
+function updateHQLive() {
+  if (_activeTab !== 'hq') return;
+  document.querySelectorAll('.hq-buy-btn').forEach(btn => {
+    const f = HQ_FACILITIES.find(x => x.id === btn.dataset.hq);
+    const maxed = f.maxLevel !== null && getHQLevel(f.id) >= f.maxLevel;
+    const canBuy = !maxed && G.money >= getHQCost(f.id);
+    if (btn.disabled === canBuy) renderHQ();
+  });
+}
+
 // ─── Fast UI Refresh (HUD only — no DOM reconstruction) ─────────────────────
 
 function fastRefresh() {
@@ -1359,6 +1420,7 @@ function fastRefresh() {
     updateGarageLive();
     updateChampLive();
     updateSeasonLive();
+    updateHQLive();
     updateSponsorsLive();
   } catch (e) {
     console.error('[fastRefresh] error:', e);

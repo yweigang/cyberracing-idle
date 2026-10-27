@@ -249,6 +249,31 @@ test('Prestige shop items apply their effects', () => {
   assert(!g.run(`G.drivers.some(d => d.tier === 'L')`), 'legend leaves at season end');
 });
 
+test('Team HQ is locked until 8k REP, then levels apply their effects', () => {
+  const { g, a, car } = setup();
+  g.run(`assignDriver('${a}', '${car}')`);
+  assert(!g.run(`buyHQ('simulator').ok`), 'locked at 0 REP');
+  g.run('G.reputation = 8000');
+  const rating = g.run('calcCarRating(G.cars[0])');
+  const upg = g.run(`getEffectiveUpgradeCost('engine', 0, 'GT4')`);
+  const spons = g.run('calcSponsorIncomePerSec()');
+  const m = g.run('G.money');
+  ['simulator', 'composites', 'hospitality'].forEach(id => assert(g.run(`buyHQ('${id}').ok`), id));
+  assert(m - g.run('G.money') === 2000000 + 1500000 + 1000000, 'level 1 costs paid');
+  assert(g.run(`getHQCost('simulator')`) === 3200000, 'cost grows x1.6');
+  assert(Math.abs(g.run('calcCarRating(G.cars[0])') / rating - 1.015) < 1e-9, 'simulator +1.5% rating');
+  assert(g.run(`getEffectiveUpgradeCost('engine', 0, 'GT4')`) === Math.floor(upg * 0.97), 'composites -3% upgrade cost');
+  assert(Math.abs(g.run('calcSponsorIncomePerSec()') / spons - 1.05) < 1e-9, 'hospitality +5% sponsors');
+});
+
+test('HQ levels pay PP on prestige and reset', () => {
+  const { g } = setup();
+  g.run(`G.reputation = 8000; G.prestige.repAtLastPrestige = 8000; buyHQ('simulator'); buyHQ('simulator'); buyHQ('hospitality');`);
+  assert(g.run('calcPrestigePoints()') === 3, '3 HQ levels = 3 PP');
+  g.run('G.hq.composites = 17; doPrestige()');
+  assert(g.run('G.prestigePoints') === 20 && g.run('getHQLevel("simulator")') === 0, 'PP paid and HQ reset');
+});
+
 let failed = 0;
 for (const t of tests) {
   try { t.fn(); console.log('PASS', t.name); }

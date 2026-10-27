@@ -585,6 +585,25 @@ select { font-family: inherit; }
 .champ-footer-actions { display: flex; gap: 6px; }
 .autorenew-btn.on { color: var(--green); border-color: #1a4030; }
 
+.hq-intro { font-size: 12px; color: var(--text-2); margin-bottom: 12px; line-height: 1.5; }
+.hq-intro .pp-gain { color: var(--green); font-family: var(--font-mono); font-weight: 600; }
+.hq-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; }
+.hq-card {
+  background: var(--bg-2);
+  border: 1px solid var(--border-hi);
+  border-radius: var(--radius-lg);
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.hq-head { display: flex; align-items: center; gap: 8px; }
+.hq-icon { font-size: 18px; }
+.hq-name { font-weight: 600; flex: 1; }
+.hq-level { font-family: var(--font-mono); color: var(--cyan); font-size: 13px; }
+.hq-desc { font-size: 12px; color: var(--text-2); }
+.hq-effect { font-size: 12px; color: var(--green); font-family: var(--font-mono); }
+
 .season-clock {
   background: var(--bg-2);
   border: 1px solid var(--border-hi);

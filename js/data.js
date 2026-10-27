@@ -591,6 +591,42 @@ const PRESTIGE_PODIUM_SHARE = 0.4;
 const PRESTIGE_REP_PER_PP = 1000;   // REP gained since the last reset per PP
 const PRESTIGE_MIN_GAIN = 20;       // smallest PP gain that allows a reset
 
+// ─── Team HQ (late-game money sink) ───────────────────────────────────────────
+
+// Facilities bought with money; costs grow exponentially. Levels reset on prestige
+// and each level is worth HQ_PP_PER_LEVEL prestige points at the reset.
+const HQ_UNLOCK_REP = 8000;
+const HQ_PP_PER_LEVEL = 1;
+const HQ_FACILITIES = [
+  {
+    id: 'simulator',
+    name: 'Simulator Centre',
+    icon: '🖥',
+    description: '+1.5% race rating for every car per level.',
+    baseCost: 2000000,
+    costMult: 1.6,
+    maxLevel: null,
+  },
+  {
+    id: 'composites',
+    name: 'Composites Factory',
+    icon: '🏭',
+    description: '-3% car upgrade costs per level.',
+    baseCost: 1500000,
+    costMult: 1.6,
+    maxLevel: 15,
+  },
+  {
+    id: 'hospitality',
+    name: 'Hospitality Suite',
+    icon: '🥂',
+    description: '+5% sponsor income per level.',
+    baseCost: 1000000,
+    costMult: 1.5,
+    maxLevel: null,
+  },
+];
+
 // ─── Garage Upgrades ──────────────────────────────────────────────────────────
 
 const GARAGE_UPGRADES = [

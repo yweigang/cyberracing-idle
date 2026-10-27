@@ -60,6 +60,7 @@ function createDefaultState() {
     teamPrincipal: null,
     raceEngineers: {},
     licensePtMultiplier: LICENSE_CONFIG.defaultMultiplier,
+    hq: { simulator: 0, composites: 0, hospitality: 0 },
     notifications: [],
   };
 }
@@ -93,7 +94,7 @@ function calcCarRating(car, format = 'sprint', wet = false) {
   const reB = getREBonuses(car.id);
   const driverMult = 1 + calcDriverSkill(driver, format, wet) / 100 + getTPBonuses().paceMult;
   return calcCarBaseRating(car) * driverMult * (1 + reB.setupBonus)
-    * G.prestige.permanentBonuses.incomeMultiplier;
+    * G.prestige.permanentBonuses.incomeMultiplier * (1 + getHQLevel('simulator') * 0.015);
 }
 
 // Chance per round that the car retires. Endurance rounds are twice as punishing.
@@ -108,7 +109,7 @@ function calcDNFChance(car, format = 'sprint') {
 function calcSponsorIncomePerSec() {
   const prestigeBonus = (G.prestige && G.prestige.permanentBonuses && G.prestige.permanentBonuses.sponsorBonus) || 0;
   const tpBonus = getTPBonuses().sponsorMult;
-  const sponsorMult = 1 + prestigeBonus + tpBonus;
+  const sponsorMult = 1 + prestigeBonus + tpBonus + getHQLevel('hospitality') * 0.05;
   const parentsIncome = 8; // Mum & Dad Racing Support — always active
   const sponsors = Array.isArray(G.sponsors) ? G.sponsors : [];
   const earnedIncome = sponsors.reduce((sum, s) => sum + (s ? s.incomePerSec : 0), 0);
@@ -181,6 +182,38 @@ function buyCar(classId) {
     autoRenew: null,
   });
   return { ok: true, carId: id };
+}
+
+// ─── Team HQ ──────────────────────────────────────────────────────────────────
+
+function isHQUnlocked() {
+  return G.reputation >= HQ_UNLOCK_REP;
+}
+
+function getHQLevel(id) {
+  return (G.hq && G.hq[id]) || 0;
+}
+
+function getHQCost(id) {
+  const f = HQ_FACILITIES.find(x => x.id === id);
+  return f ? Math.floor(f.baseCost * Math.pow(f.costMult, getHQLevel(id))) : Infinity;
+}
+
+function getHQPrestigePoints() {
+  return HQ_FACILITIES.reduce((sum, f) => sum + getHQLevel(f.id), 0) * HQ_PP_PER_LEVEL;
+}
+
+function buyHQ(id) {
+  const f = HQ_FACILITIES.find(x => x.id === id);
+  if (!f) return { ok: false, msg: 'Unknown facility.' };
+  if (!isHQUnlocked()) return { ok: false, msg: `Team HQ unlocks at ${formatNumber(HQ_UNLOCK_REP)} REP.` };
+  if (f.maxLevel !== null && getHQLevel(id) >= f.maxLevel) return { ok: false, msg: 'Already maxed.' };
+  const cost = getHQCost(id);
+  if (G.money < cost) return { ok: false, msg: 'Not enough money.' };
+  G.money -= cost;
+  if (!G.hq) G.hq = {};
+  G.hq[id] = getHQLevel(id) + 1;
+  return { ok: true, level: G.hq[id] };
 }
 
 // ─── Sell Car ─────────────────────────────────────────────────────────────────
@@ -863,7 +896,7 @@ function getREBonuses(carId) {
 // Upgrade cost after TP budget management discount
 function getEffectiveUpgradeCost(upgradeId, currentLevel, classId) {
   const base = getUpgradeCost(upgradeId, currentLevel, classId);
-  return Math.max(1, Math.floor(base * getTPBonuses().upgradeCostMult));
+  return Math.max(1, Math.floor(base * getTPBonuses().upgradeCostMult * (1 - getHQLevel('composites') * 0.03)));
 }
 
 function _generateStaff(type, tier) {
@@ -1240,7 +1273,7 @@ function calcPrestigePoints() {
     else if (c.finalPosition <= 3) pp += titlePP * PRESTIGE_PODIUM_SHARE;
   });
   const repGained = Math.max(0, G.reputation - (G.prestige.repAtLastPrestige || 0));
-  return Math.floor(pp + repGained / PRESTIGE_REP_PER_PP);
+  return Math.floor(pp + repGained / PRESTIGE_REP_PER_PP) + getHQPrestigePoints();
 }
 
 function canPrestige() {
@@ -1336,6 +1369,9 @@ function doPrestige() {
   // Sponsor contracts end; a fresh set of offers is waiting
   G.sponsors = [null, null, null, null, null];
   G.sponsorOffers = null;
+
+  // HQ facilities are rebuilt each run (their levels were paid out as PP)
+  G.hq = { simulator: 0, composites: 0, hospitality: 0 };
 
   addNotification(`Prestige! +${ppGain} PP. The team starts over with ${G.cars.length} car${G.cars.length > 1 ? 's' : ''} and $5,000.`, 'prestige');
   if (singleSeaterJustUnlocked) {
@@ -1487,6 +1523,7 @@ function loadGame() {
     _migrateDriverLicenses();
     _migrateRaceEntries();
     _migrateSeasonClock();
+    if (!G.hq) G.hq = { simulator: 0, composites: 0, hospitality: 0 };
     return true;
   } catch (e) {
     console.warn('Load failed:', e);

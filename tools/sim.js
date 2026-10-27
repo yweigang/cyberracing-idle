@@ -115,6 +115,15 @@ var BOT = {
       if (!best || G.money - best.cost < reserve) break;
       buyUpgrade(best.car.id, best.u);
     }
+    // Surplus beyond the reserve goes into the cheapest HQ facility
+    if (isHQUnlocked()) {
+      for (let k = 0; k < 20; k++) {
+        const f = HQ_FACILITIES.filter(f => f.maxLevel === null || getHQLevel(f.id) < f.maxLevel)
+          .sort((a, b) => getHQCost(a.id) - getHQCost(b.id))[0];
+        if (!f || G.money - getHQCost(f.id) < reserve * 2) break;
+        buyHQ(f.id);
+      }
+    }
     // Idle cars enter their best series; auto-renew switches to it once the car outgrows the old one
     G.cars.forEach(car => {
       const c = BOT.pickSeries(car);
@@ -137,9 +146,10 @@ for (let s = 1; s <= HOURS * 3600; s++) {
     lastSeason = season;
     const sum = g.run(`({ m: Math.round(G.money), rep: G.reputation, sp: Math.round(calcTotalIncomePerSec()),
       res: (G.lastSeasonSummary.results || []).map(r => r.classId + ' P' + r.finalPosition).join(' '),
-      cars: G.cars.map(c => c.classId + '★' + Math.round(calcCarRating(c))).join(' ') })`);
+      cars: G.cars.map(c => c.classId + '★' + Math.round(calcCarRating(c))).join(' '),
+      hq: HQ_FACILITIES.map(f => getHQLevel(f.id)).join('/') })`);
     const earned = g.run('G.totalEarned');
-    console.log(`${fmtTime()}  -- S${season - 1}: earned $${Math.round(earned - lastEarned).toLocaleString('en')} | bank $${sum.m.toLocaleString('en')} | REP ${sum.rep} | sponsors $${sum.sp}/s | ${sum.cars}`);
+    console.log(`${fmtTime()}  -- S${season - 1}: earned $${Math.round(earned - lastEarned).toLocaleString('en')} | bank $${sum.m.toLocaleString('en')} | REP ${sum.rep} | sponsors $${sum.sp}/s | HQ ${sum.hq} | ${sum.cars}`);
     console.log(`          results: ${sum.res}`);
     lastEarned = earned;
     if (PRESTIGE && g.run('calcPrestigePoints()') >= 150) {
