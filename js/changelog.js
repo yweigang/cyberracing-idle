@@ -4,6 +4,15 @@
 
 const CHANGELOG = [
   {
+    version: '0.5.3',
+    date: '2026-10-27',
+    title: 'Sponsor PP',
+    changes: [
+      'PP from sponsor bonuses now count toward your next prestige reset instead of being paid out at once. Teams that have not reset yet keep their PP in that counter.',
+      'The Prestige figure in the header also shows the PP the next reset would grant.',
+    ],
+  },
+  {
     version: '0.5.2',
     date: '2026-10-27',
     title: 'Single-seater licenses',

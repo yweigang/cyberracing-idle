@@ -65,6 +65,17 @@ test('F3 and F2 need their own licenses; drivers already in those cars keep thei
   assert(!driver(g, b).licenses.includes('F3'), 'free C driver earns no F3');
 });
 
+test('Sponsor PP count toward the next prestige, not the PP balance', () => {
+  const { g } = setup();
+  const before = g.run('calcPrestigePoints()');
+  g.run(`G.sponsors = [generateSponsor('factory')]; isSponsorTargetMet = () => true; evaluateSponsorsAtSeasonEnd();`);
+  assert(g.run('G.prestigePoints') === 0, 'no PP before a reset');
+  assert(g.run('calcPrestigePoints()') >= before + 5, 'sponsor PP go to the next-prestige counter');
+  // An old save that got the PP directly moves them to the counter
+  g.run(`G.prestige.sponsorPP = undefined; G.prestigePoints = 5; saveGame(); loadGame();`);
+  assert(g.run('G.prestigePoints') === 0 && g.run('G.prestige.sponsorPP') === 5, 'migration moves unspent PP');
+});
+
 test('Save/load round-trips and migrates drivers without license data', () => {
   const { g } = setup();
   g.run(`G.drivers.forEach(d => { delete d.licenses; delete d.licensePoints; }); saveGame(); loadGame();`);

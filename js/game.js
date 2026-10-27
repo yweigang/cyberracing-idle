@@ -51,6 +51,7 @@ function createDefaultState() {
       lastPrestigeSeason: 0,   // G.season value at last prestige (for PP calculation)
       lastPrestigeAt: 0,       // timestamp of the last reset (results after it earn PP)
       repAtLastPrestige: 0,
+      sponsorPP: 0,            // sponsor PP bonuses, paid out at the next reset
       permanentBonuses: {
         incomeMultiplier: 1.0,   // race rating multiplier (Performance Programme)
         scoutDiscount: 0,
@@ -1189,8 +1190,8 @@ function evaluateSponsorsAtSeasonEnd() {
         addNotification(`${s.name}: +${formatNumber(s.bonusRep)} REP bonus!`, 'success');
       }
       if (s.bonusPP > 0) {
-        G.prestigePoints += s.bonusPP;
-        addNotification(`${s.name}: +${s.bonusPP} PP!`, 'prestige');
+        G.prestige.sponsorPP = (G.prestige.sponsorPP || 0) + s.bonusPP;
+        addNotification(`${s.name}: +${s.bonusPP} PP toward your next prestige!`, 'prestige');
       }
       if (s.unlocksLivery && !G.hasFactoryLivery) {
         G.hasFactoryLivery = true;
@@ -1466,6 +1467,15 @@ function _migratePrestige() {
   if (!G.prestige) G.prestige = createDefaultState().prestige;
   if (G.prestige.prestigeCount   === undefined) G.prestige.prestigeCount   = 0;
   if (G.prestige.lastPrestigeSeason === undefined) G.prestige.lastPrestigeSeason = 0;
+  if (G.prestige.sponsorPP === undefined) {
+    // Sponsor PP used to be paid out at once; before a first reset it is the only PP source,
+    // so unspent PP moves to the next-prestige counter
+    G.prestige.sponsorPP = 0;
+    if (G.prestige.prestigeCount === 0 && G.prestigePoints > 0) {
+      G.prestige.sponsorPP = G.prestigePoints;
+      G.prestigePoints = 0;
+    }
+  }
   _migrateDriverAge();
 }
 
@@ -1712,7 +1722,7 @@ function calcPrestigePoints() {
     else if (c.finalPosition <= 3) pp += titlePP * PRESTIGE_PODIUM_SHARE;
   });
   const repGained = Math.max(0, G.reputation - (G.prestige.repAtLastPrestige || 0));
-  return Math.floor(pp + repGained / PRESTIGE_REP_PER_PP) + getHQPrestigePoints();
+  return Math.floor(pp + repGained / PRESTIGE_REP_PER_PP) + getHQPrestigePoints() + (G.prestige.sponsorPP || 0);
 }
 
 // Money the team restarts with after a prestige reset
@@ -1768,6 +1778,7 @@ function doPrestige() {
   G.prestige.lastPrestigeSeason = G.season;
   G.prestige.lastPrestigeAt = Date.now();
   G.prestige.repAtLastPrestige = G.reputation;
+  G.prestige.sponsorPP = 0;
   const prevPrestigeCount = G.prestige.prestigeCount || 0;
   G.prestige.prestigeCount = prevPrestigeCount + 1;
   G.prestige.totalResets++;

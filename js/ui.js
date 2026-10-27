@@ -194,7 +194,11 @@ function updateCurrencyBar() {
   document.getElementById('hud-money').textContent = '$' + formatNumber(G.money);
   document.getElementById('hud-rep').textContent = formatNumber(G.reputation) + ' REP';
   _updateSalaryHud();
-  document.getElementById('hud-pp').textContent = G.prestigePoints + ' PP';
+  const ppNext = calcPrestigePoints();
+  const hudPP = document.getElementById('hud-pp');
+  hudPP.textContent = G.prestigePoints + ' PP' + (ppNext > 0 ? ` (+${ppNext})` : '');
+  hudPP.title = `${G.prestigePoints} PP to spend. The next prestige reset grants +${ppNext} PP`
+    + (G.prestige.sponsorPP ? `, ${G.prestige.sponsorPP} of them from sponsors.` : '.');
   const ipsEl = document.getElementById('hud-ips');
   const heldIps = calcSponsorHeldPerSec();
   ipsEl.textContent = '$' + formatNumber(calcTotalIncomePerSec()) + '/s';
@@ -1148,7 +1152,7 @@ function renderSponsors() {
       let bonusParts = [];
       if (sponsor.bonusCash > 0) bonusParts.push(`$${formatNumber(sponsor.bonusCash)}`);
       if (sponsor.bonusRep > 0)  bonusParts.push(`+${formatNumber(sponsor.bonusRep)} REP`);
-      if (sponsor.bonusPP > 0)   bonusParts.push(`+${sponsor.bonusPP} PP`);
+      if (sponsor.bonusPP > 0)   bonusParts.push(`+${sponsor.bonusPP} PP at next prestige`);
       if (sponsor.unlocksLivery) bonusParts.push('Exclusive Livery');
 
       html += `
@@ -1206,7 +1210,7 @@ function renderSponsors() {
       let bonusParts = [];
       if (opt.bonusCash > 0) bonusParts.push(`$${formatNumber(opt.bonusCash)}`);
       if (opt.bonusRep > 0)  bonusParts.push(`+${formatNumber(opt.bonusRep)} REP`);
-      if (opt.bonusPP > 0)   bonusParts.push(`+${opt.bonusPP} PP`);
+      if (opt.bonusPP > 0)   bonusParts.push(`+${opt.bonusPP} PP at next prestige`);
       if (opt.unlocksLivery) bonusParts.push('Livery');
 
       html += `
@@ -1733,7 +1737,7 @@ function renderPrestige() {
     <div class="prestige-info">
       <div class="prestige-pp">You have <span class="pp-value">${G.prestigePoints} PP</span></div>
       <div class="prestige-gain">Resetting now grants <span class="pp-gain">+${ppGain} PP</span>
-        <span class="prestige-warning">(titles and podiums since the last reset, 1 PP per ${formatNumber(PRESTIGE_REP_PER_PP)} REP gained, ${HQ_PP_PER_LEVEL} PP per HQ level)</span></div>
+        <span class="prestige-warning">(titles and podiums since the last reset, 1 PP per ${formatNumber(PRESTIGE_REP_PER_PP)} REP gained, ${HQ_PP_PER_LEVEL} PP per HQ level, sponsor PP bonuses)</span></div>
       <div class="prestige-warning">Starts the team over: $${formatNumber(getPrestigeStartMoney())}, one stock GT4 (plus a car per Development Token), no sponsors, HQ rebuilt. Drivers, licenses, REP, garage, staff and PP stay, and no salaries are due for that season.
         ${_prestigeBuyWarning(ppGain)}
         ${(G.prestige.prestigeCount || 0) === 0 ? '<br>Your first reset unlocks the <b>Single-Seater Pathway</b> (F4 → F1).' : ''}</div>
