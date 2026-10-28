@@ -4,15 +4,6 @@
 
 const CHANGELOG = [
   {
-    version: '0.5.8',
-    date: '2026-10-28',
-    title: 'Licenses in the garage',
-    changes: [
-      'Each driver in a car lineup shows their highest GT and single-seater license. A license above the car's class is marked ▲ in amber, so you can spot a driver ready to move up.',
-      'The add-driver dropdown lists each candidate's top licenses too.',
-    ],
-  },
-  {
     version: '0.5.7',
     date: '2026-10-28',
     title: 'Fresh seasons after a reset',
