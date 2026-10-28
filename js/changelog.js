@@ -4,6 +4,15 @@
 
 const CHANGELOG = [
   {
+    version: '0.7.3',
+    date: '2026-10-28',
+    title: 'Licenses in order',
+    changes: [
+      'Licenses are now earned in order: a driver needs F2 before F1, LMP2 before Hypercar and so on. LP toward higher licenses still builds up, and counts as soon as the license below is earned.',
+      'Drivers who already hold a license without the ones below it (for example F1 without F2) get the missing ones.',
+    ],
+  },
+  {
     version: '0.7.2',
     date: '2026-10-28',
     title: 'Roster sorting and filters',

@@ -208,6 +208,25 @@ test('Higher-tier scouts arrive with licenses and earn no LP for them', () => {
   assert(!('GT3' in earned) && earned.LMP3 === undefined && earned.LMP2 > 0, 'no LP toward held licenses');
 });
 
+test('Licenses come in ladder order: F1 waits for F2, banked LP counts once F2 is held', () => {
+  const { g } = setup();
+  const d = g.run(`(G.nextFreeScoutAt = 0, scoutDriver('A')).driver.id`);
+  const lic = () => driver(g, d).licenses;
+  g.run(`(() => { const d = G.drivers.find(x => x.id === '${d}'); d.licensePoints.F1 = 299; awardChampionshipLP(d, 'HYPERCAR', 1, null); })()`);
+  assert(driver(g, d).licensePoints.F1 >= 300 && !lic().includes('F1'), 'no F1 without F2: ' + lic());
+  g.run(`(() => { const d = G.drivers.find(x => x.id === '${d}'); d.licensePoints.F2 = 95; awardChampionshipLP(d, 'HYPERCAR', 1, null); })()`);
+  assert(lic().includes('F2') && lic().includes('F1'), 'F2 unlocks the banked F1: ' + lic());
+});
+
+test('Saves with a license held out of order get the lower ones', () => {
+  const { g } = setup();
+  const d = g.run(`(G.nextFreeScoutAt = 0, scoutDriver('A')).driver.id`);
+  g.run(`G.prestige.prestigeCount = 1; (() => { const d = G.drivers.find(x => x.id === '${d}');
+    d.licenses = ['GT4', 'GT3', 'LMP3', 'F4', 'F3', 'F1']; d.licensePoints.F2 = 40; })(); saveGame(); loadGame();`);
+  const after = driver(g, d);
+  assert(after.licenses.includes('F2') && after.licensePoints.F2 === 100, 'F1 holder gets F2: ' + after.licenses);
+});
+
 test('Sponsor offers are fixed for the season and refresh next season', () => {
   const { g } = setup();
   const first = g.run('getSponsorOffers().map(o => o.id).join()');

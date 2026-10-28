@@ -1686,13 +1686,37 @@ function _migrateDriverLicenses() {
         d.licensePoints[lt.id] = d.licenses.includes(lt.id) ? lt.pointsRequired : 0;
       }
     });
-    // Retroactively grant licenses where LP already meets the threshold
-    LICENSE_TIERS.forEach(lt => {
-      if ((d.licensePoints[lt.id] || 0) >= lt.pointsRequired && !d.licenses.includes(lt.id)) {
-        d.licenses.push(lt.id);
-      }
+    // Licenses were once earned out of order (F1 before F2): a held license brings every lower one
+    [...LICENSE_TIERS].reverse().forEach(lt => {
+      const prev = _prevLicense(lt.id);
+      if (!prev || !d.licenses.includes(lt.id) || d.licenses.includes(prev.id)) return;
+      d.licenses.push(prev.id);
+      d.licensePoints[prev.id] = Math.max(d.licensePoints[prev.id] || 0, prev.pointsRequired);
     });
+    // Retroactively grant licenses where LP already meets the threshold
+    _grantEarnedLicenses(d);
   });
+}
+
+// The license below this one in its pathway, or null for the first
+function _prevLicense(id) {
+  const lt = LICENSE_TIERS.find(t => t.id === id);
+  const ladder = LICENSE_TIERS.filter(t => t.pathway === lt.pathway);
+  return ladder[ladder.indexOf(lt) - 1] || null;
+}
+
+// Grants every license whose LP is met once the one below it is held, so F2 always comes
+// before F1. LP keeps banking meanwhile. Returns the licenses granted.
+function _grantEarnedLicenses(driver) {
+  const granted = [];
+  LICENSE_TIERS.forEach(lt => { // in ladder order, so one grant can unlock the next
+    if (driver.licenses.includes(lt.id) || (driver.licensePoints[lt.id] || 0) < lt.pointsRequired) return;
+    const prev = _prevLicense(lt.id);
+    if (prev && !driver.licenses.includes(prev.id)) return;
+    driver.licenses.push(lt.id);
+    granted.push(lt);
+  });
+  return granted;
 }
 
 // Saves from before the season clock start a fresh season timer
@@ -1774,13 +1798,8 @@ function awardChampionshipLP(driver, classId, finalPos, carId) {
     if (pts <= 0) return;
     driver.licensePoints[licenseId] = (driver.licensePoints[licenseId] || 0) + pts;
     earned[licenseId] = pts;
-
-    const licenseDef = LICENSE_TIERS.find(lt => lt.id === licenseId);
-    if (licenseDef && driver.licensePoints[licenseId] >= licenseDef.pointsRequired) {
-      driver.licenses.push(licenseId);
-      _notify(`🏆 ${driver.name} has earned their ${licenseDef.name} License!`, 'success');
-    }
   });
+  _grantEarnedLicenses(driver).forEach(lt => _notify(`🏆 ${driver.name} has earned their ${lt.name} License!`, 'success'));
   return earned;
 }
 
