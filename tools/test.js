@@ -599,6 +599,23 @@ test('No salaries are due in the season of a prestige reset, and Investor Backin
   assert(g.run('G.money') >= 30000, 'no salaries paid');
 });
 
+test('A prestige reset restarts at season 1 and carries legend contracts into it', () => {
+  const { g, a, car } = setup();
+  g.run(`assignDriver('${a}', '${car}')`);
+  finishChamp(g, 'gt4_regional', car);
+  g.run('endSeason(); endSeason();');
+  finishChamp(g, 'gt4_regional', car);
+  g.run(`G.prestigePoints = 1000; buyPrestigeItem('legend_contract'); G.reputation = 40000; G.seasonStartTime -= 600000;`);
+  assert(g.run(`G.drivers.find(d => d.contractUntilSeason !== undefined).licenses.includes('F1')`), 'legend holds an F1 license');
+  assert(g.run('doPrestige().ok'), 'prestige');
+  assert(g.run('G.season') === 1, 'back to season 1');
+  assert(g.run('getSeasonTimeLeft()') > SEASON_SEC(g) - 5, 'full season clock');
+  assert(g.run('_seasonChampionships().length') === 0 && g.run('G.completedChampionships.length') === 2, 'earlier runs are not this season');
+  assert(g.run('G.drivers.some(d => d.contractUntilSeason === 1)'), 'legend stays for the new season');
+  g.run('endSeason()');
+  assert(!g.run('G.drivers.some(d => d.contractUntilSeason !== undefined)'), 'legend leaves after it');
+});
+
 test('A car that raced a series renews at a quarter of the fee', () => {
   const { g, a, car } = setup();
   g.run(`assignDriver('${a}', '${car}')`);

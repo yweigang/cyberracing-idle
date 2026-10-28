@@ -4,6 +4,15 @@
 
 const CHANGELOG = [
   {
+    version: '0.5.7',
+    date: '2026-10-28',
+    title: 'Fresh seasons after a reset',
+    changes: [
+      'A prestige reset now starts the team again at season 1 with a full season clock, salary-free. Before, the old season kept running with nothing booked.',
+      'Legend drivers now hold the F1 license, along with every other one. Legends you already signed get it too.',
+    ],
+  },
+  {
     version: '0.5.6',
     date: '2026-10-27',
     title: 'Entry fees before you buy',

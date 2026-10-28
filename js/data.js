@@ -1,5 +1,5 @@
 // Game release shown in the header; keep in step with js/changelog.js
-const GAME_VERSION = '0.5.6';
+const GAME_VERSION = '0.5.7';
 
 'use strict';
 
@@ -219,7 +219,7 @@ const TIER_STARTING_LICENSES = {
   B: ['GT4', 'GT3', 'F4'],
   A: ['GT4', 'GT3', 'LMP3', 'F4', 'F3'],
   S: ['GT4', 'GT3', 'LMP3', 'LMP2', 'F4', 'F3', 'F2'],
-  L: ['GT4', 'GT3', 'LMP3', 'LMP2', 'HYPERCAR', 'F4', 'F3', 'F2'],
+  L: ['GT4', 'GT3', 'LMP3', 'LMP2', 'HYPERCAR', 'F4', 'F3', 'F2', 'F1'],
 };
 
 // Global LP multiplier config — wire prestige scaling here when values are finalised

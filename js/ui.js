@@ -1695,7 +1695,7 @@ function _confirmPrestige() {
     'Running championships, registrations and sponsor contracts',
     'Pit crew, car preparation above level 2, setup knowledge and HQ',
   ];
-  const kept = 'Drivers, licenses, REP, garage, staff and PP. No salaries are due for the season of the reset.';
+  const kept = 'Drivers, licenses, REP, garage, staff and PP. The team starts again at season 1, with no salaries due.';
   showConfirmDialog({
     title: `Prestige reset for +${ppGain} PP?`,
     body: `<ul class="dialog-list">
@@ -1719,7 +1719,7 @@ function renderPrestige() {
   const container = document.getElementById('panel-prestige');
 
   // ── Season clock
-  const completedThisSeason = G.completedChampionships.filter(c => c.season === G.season);
+  const completedThisSeason = _seasonChampionships();
   const totalSalary = getSeasonSalaryTotal();
   const leftSec = getSeasonTimeLeft();
   const seasonPct = 100 - (leftSec / SEASON_LENGTH_SEC) * 100;
@@ -1812,7 +1812,7 @@ function renderPrestige() {
       <div class="prestige-pp">You have <span class="pp-value">${G.prestigePoints} PP</span></div>
       <div class="prestige-gain">Resetting now grants <span class="pp-gain">+${ppGain} PP</span>
         <span class="prestige-warning">(titles and podiums since the last reset, 1 PP per ${formatNumber(PRESTIGE_REP_PER_PP)} REP gained, ${HQ_PP_PER_LEVEL} PP per HQ level, sponsor PP bonuses)</span></div>
-      <div class="prestige-warning">Starts the team over: $${formatNumber(getPrestigeStartMoney())}, one stock GT4 (plus a car per Development Token), no sponsors, HQ rebuilt. Drivers, licenses, REP, garage, staff and PP stay, and no salaries are due for that season.
+      <div class="prestige-warning">Starts the team over: $${formatNumber(getPrestigeStartMoney())}, one stock GT4 (plus a car per Development Token), no sponsors, HQ rebuilt. Drivers, licenses, REP, garage, staff and PP stay. The team starts again at season 1, with no salaries due.
         ${_prestigeBuyWarning(ppGain)}
         ${(G.prestige.prestigeCount || 0) === 0 ? '<br>Your first reset unlocks the <b>Single-Seater Pathway</b> (F4 → F1).' : ''}</div>
       <button class="btn btn-prestige ${canP ? '' : 'disabled'}" id="prestige-btn" ${canP ? '' : 'disabled'}>

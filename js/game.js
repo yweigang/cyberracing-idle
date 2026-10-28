@@ -993,16 +993,23 @@ function getSponsorSlotsUnlocked() {
   return slots;
 }
 
+// Championships completed in a season of the current run. Season numbers restart
+// at 1 after a prestige reset, so earlier runs are told apart by completion time.
+function _seasonChampionships(season = G.season) {
+  const since = (G.prestige && G.prestige.lastPrestigeAt) || 0;
+  return G.completedChampionships.filter(c => c.season === season && (c.completedAt || 0) > since);
+}
+
 // Round results (positions, 'DNF', 'DNS') raced this season
 function _seasonRoundResults() {
-  const done = G.completedChampionships.filter(c => c.season === G.season).flatMap(c => c.results || []);
+  const done = _seasonChampionships().flatMap(c => c.results || []);
   const live = G.activeChampionships.flatMap(e => e.results || []);
   return done.concat(live);
 }
 
 // { have, need } toward a sponsor target this season
 function getSponsorTargetProgress(target) {
-  const season = G.completedChampionships.filter(c => c.season === G.season);
+  const season = _seasonChampionships();
   const tierOf = c => { const cls = getCarClassById(c.classId); return cls ? cls.tier : 0; };
   switch (target.type) {
     case 'round_podiums':
@@ -1043,7 +1050,7 @@ function isSponsorTargetMet(sponsor) {
     return p.have >= p.need;
   }
   // Contracts signed before result targets
-  const thisSeasonChamps = G.completedChampionships.filter(c => c.season === G.season);
+  const thisSeasonChamps = _seasonChampionships();
   switch (target) {
     case 'any_round_completed':
       return thisSeasonChamps.length > 0 || G.activeChampionships.some(c => c.currentRound > 0);
@@ -1522,6 +1529,12 @@ function _migrateDriverLicenses() {
       if (car && car.classId === 'F2') grant.add('F2');
       grant.forEach(id => { if (!d.licenses.includes(id)) d.licenses.push(id); });
     }
+    // Legends start with every license their tier now holds (F1 was once missing)
+    if (d.tier === 'L') TIER_STARTING_LICENSES.L.forEach(id => {
+      if (d.licenses.includes(id)) return;
+      d.licenses.push(id);
+      d.licensePoints[id] = LICENSE_TIERS.find(lt => lt.id === id).pointsRequired;
+    });
     // Ensure every license tier has an entry
     LICENSE_TIERS.forEach(lt => {
       if (d.licensePoints[lt.id] === undefined) {
@@ -1628,7 +1641,7 @@ function awardChampionshipLP(driver, classId, finalPos, carId) {
 // LP earned this season per driver, summed from completed championships
 function _seasonLPByDriver(season) {
   const byDriver = {};
-  G.completedChampionships.filter(c => c.season === season).forEach(c => {
+  _seasonChampionships(season).forEach(c => {
     const perDriver = c.lpByDriver || (c.driverId && c.lpGained ? { [c.driverId]: c.lpGained } : {});
     Object.entries(perDriver).forEach(([driverId, earned]) => {
       const acc = byDriver[driverId] = byDriver[driverId] || {};
@@ -1641,8 +1654,7 @@ function _seasonLPByDriver(season) {
 // endedAt: when the season actually ended (earlier than scheduled for an early end)
 function endSeason(endedAt = getSeasonEndTime()) {
   const endedSeason = G.season;
-  const seasonResults = G.completedChampionships
-    .filter(c => c.season === endedSeason)
+  const seasonResults = _seasonChampionships(endedSeason)
     .map(c => ({ definitionId: c.definitionId, classId: c.classId, finalPosition: c.finalPosition, prizeEarned: c.prizeEarned }));
 
   // 1. Evaluate all active sponsor contracts
@@ -1663,8 +1675,7 @@ function endSeason(endedAt = getSeasonEndTime()) {
   const lpByDriver = _seasonLPByDriver(endedSeason);
 
   // 4. Award XP (per championship completion; separate from LP)
-  G.completedChampionships
-    .filter(c => c.season === G.season)
+  _seasonChampionships()
     .forEach(comp => {
       _champDriverAndClass(comp).driverIds.forEach(driverId => {
         const driver = G.drivers.find(d => d.id === driverId);
@@ -1813,9 +1824,16 @@ function doPrestige() {
   G.prestige.totalResets++;
   const singleSeaterJustUnlocked = prevPrestigeCount === 0;
 
-  // Reset money and end all championships. No salaries are due this season.
+  // Reset money, end all championships and start over at season 1, salary-free.
+  // The old season ends without its season-end steps (no aging, sponsor payouts or
+  // salaries); legend contracts running out with it move to the new one.
   G.money = getPrestigeStartMoney();
   G.activeChampionships = [];
+  G.drivers.filter(d => d.contractUntilSeason !== undefined)
+    .forEach(d => { d.contractUntilSeason = 1 + Math.max(0, d.contractUntilSeason - G.season); });
+  G.season = 1;
+  G.seasonStartTime = Date.now();
+  G.lastSeasonSummary = null;
   G.salaryFreeSeason = G.season;
 
   // Cars: development tokens keep the highest-class cars, the rest are scrapped.
@@ -1867,7 +1885,7 @@ function doPrestige() {
   // HQ facilities are rebuilt each run (their levels were paid out as PP)
   G.hq = { simulator: 0, composites: 0, hospitality: 0 };
 
-  addNotification(`Prestige! +${ppGain} PP. The team starts over with ${G.cars.length} car${G.cars.length > 1 ? 's' : ''} and $${formatNumber(G.money)}. No salaries are due this season.`, 'prestige');
+  addNotification(`Prestige! +${ppGain} PP. The team starts over with ${G.cars.length} car${G.cars.length > 1 ? 's' : ''} and $${formatNumber(G.money)}. Season ${G.season} begins, with no salaries due.`, 'prestige');
   if (singleSeaterJustUnlocked) {
     addNotification('🏎️ Single-Seater Pathway Unlocked! F4 is now available.', 'prestige');
   }
