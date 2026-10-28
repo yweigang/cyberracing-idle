@@ -663,6 +663,16 @@ test('The newest changelog entry matches the game version', () => {
   assert(first === g.run('GAME_VERSION'), `changelog starts at ${first}, game is ${g.run('GAME_VERSION')}`);
 });
 
+// The harness only runs data.js and game.js; a syntax error in any other file still breaks the game
+test('Every js file parses', () => {
+  const fs = require('fs'), path = require('path'), vm = require('vm');
+  const dir = path.join(__dirname, '..', 'js');
+  fs.readdirSync(dir).filter(f => f.endsWith('.js')).forEach(f => {
+    try { new vm.Script(fs.readFileSync(path.join(dir, f), 'utf8'), { filename: f }); }
+    catch (e) { throw new Error(`${f}: ${e.message}`); }
+  });
+});
+
 let failed = 0;
 for (const t of tests) {
   try { t.fn(); console.log('PASS', t.name); }

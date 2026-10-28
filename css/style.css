@@ -1257,6 +1257,18 @@ select { font-family: inherit; }
   border-radius: var(--radius);
   font-size: 12px;
 }
+.lineup-licenses { display: flex; gap: 4px; }
+.lineup-license {
+  font-size: 9px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 8px;
+  background: #0a1e12;
+  border: 1px solid #1a4030;
+  color: var(--green);
+  letter-spacing: 0.5px;
+}
+.lineup-license-up { background: #2a1e05; border-color: #6a4a10; color: var(--amber); }
 .lineup-btn { padding: 3px 8px; font-size: 11px; flex-shrink: 0; }
 .lineup-note { font-size: 11px; color: var(--text-3); padding: 2px 2px 0; }
 .lineup-note.warn, .lineup-short { color: var(--amber); }

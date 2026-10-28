@@ -275,6 +275,26 @@ function _renderPitCrew() {
     </div>`;
 }
 
+// A driver's highest license in each visible pathway, in pathway order
+function _topLicenses(driver) {
+  const held = driver.licenses || [];
+  const top = {};
+  LICENSE_TIERS.forEach(lt => {
+    if (held.includes(lt.id) && (lt.pathway === 'gt_endurance' || isSingleSeaterUnlocked())) top[lt.pathway] = lt;
+  });
+  return Object.values(top);
+}
+
+// Top license badges for a seat; a license above the car's class is highlighted
+function _renderSeatLicenses(driver, carLicense) {
+  const carTier = LICENSE_TIERS.find(lt => lt.id === carLicense);
+  return _topLicenses(driver).map(lt => {
+    const above = carTier && lt.pathway === carTier.pathway
+      && LICENSE_TIERS.indexOf(lt) > LICENSE_TIERS.indexOf(carTier);
+    return `<span class="lineup-license ${above ? 'lineup-license-up' : ''}"${above ? ` title="Licensed above ${carTier.name}: could race a higher class"` : ''}>${lt.name}${above ? ' ▲' : ''}</span>`;
+  }).join('');
+}
+
 // Seat rows for a car card: lead, co-drivers, and empty seats with a driver picker
 function _renderLineup(car) {
   const lineup = getCarLineup(car);
@@ -295,13 +315,15 @@ function _renderLineup(car) {
           <span class="lineup-role">${role}</span>
           <span class="lineup-name">${d.name}</span>
           <span class="lineup-stats">Pace ${d.pace} · Fit ${d.fitness} · <span style="color:${s.color}">${s.label}</span></span>
+          <span class="lineup-licenses">${_renderSeatLicenses(d, license)}</span>
           ${i > 0 ? `<button class="btn lineup-btn lineup-lead-btn" data-car="${car.id}" data-driver="${d.id}" title="Make lead driver">▲ Lead</button>` : ''}
           <button class="btn lineup-btn lineup-remove-btn" data-driver="${d.id}" title="Remove from car">✕</button>
         </div>`;
     } else {
       const options = candidates.map(c => {
         const from = c.carId ? G.cars.find(x => x.id === c.carId) : null;
-        return `<option value="${c.id}">${c.name} · Pace ${c.pace}${from ? ' (from ' + from.name + ')' : ''}</option>`;
+        const top = _topLicenses(c).map(lt => lt.name).join('/');
+        return `<option value="${c.id}">${c.name} · Pace ${c.pace}${top ? ' · ' + top : ''}${from ? ' (from ' + from.name + ')' : ''}</option>`;
       }).join('');
       html += `
         <div class="lineup-seat lineup-empty ${i >= raceSeats ? 'lineup-reserve' : ''}">
