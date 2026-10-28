@@ -983,6 +983,46 @@ function renderDriverLicenses(driver) {
 
 // ─── Drivers Panel ────────────────────────────────────────────────────────────
 
+// Roster sort and filters; license: a license id the driver must hold, status: 'free' or 'seated'
+let _driverView = { sort: 'signed', license: '', status: '', tier: '' };
+
+const DRIVER_SORTS = {
+  signed: { label: 'Signed',   cmp: null },
+  pace:   { label: 'Pace',     cmp: (a, b) => b.pace - a.pace },
+  tier:   { label: 'Tier',     cmp: (a, b) => DRIVER_TIER_ORDER.indexOf(a.tier) - DRIVER_TIER_ORDER.indexOf(b.tier) || b.pace - a.pace },
+  license:{ label: 'Licenses', cmp: (a, b) => (b.licenses || []).length - (a.licenses || []).length || b.pace - a.pace },
+  age:    { label: 'Youngest', cmp: (a, b) => (a.age || 20) - (b.age || 20) },
+  salary: { label: 'Salary',   cmp: (a, b) => getDriverSalary(b) - getDriverSalary(a) },
+  name:   { label: 'Name',     cmp: (a, b) => a.name.localeCompare(b.name) },
+};
+const DRIVER_TIER_ORDER = ['L', 'S', 'A', 'B', 'C'];
+
+// The roster after the current filters and sort
+function _filteredDrivers(visibleLicenses) {
+  const v = _driverView;
+  if (v.license && !visibleLicenses.some(lt => lt.id === v.license)) v.license = '';
+  const list = G.drivers.filter(d =>
+    (!v.license || (d.licenses || []).includes(v.license))
+    && (!v.status || (v.status === 'free') === !d.carId)
+    && (!v.tier || d.tier === v.tier));
+  const cmp = (DRIVER_SORTS[v.sort] || DRIVER_SORTS.signed).cmp;
+  return cmp ? list.sort(cmp) : list;
+}
+
+function _driverToolbar(visibleLicenses, shown) {
+  const opt = (value, label, current) => `<option value="${value}" ${value === current ? 'selected' : ''}>${label}</option>`;
+  const v = _driverView;
+  const tiers = DRIVER_TIER_ORDER.filter(t => G.drivers.some(d => d.tier === t));
+  return `
+    <div class="driver-toolbar">
+      <label>Sort <select data-view="sort">${Object.entries(DRIVER_SORTS).map(([k, s]) => opt(k, s.label, v.sort)).join('')}</select></label>
+      <label>Can drive <select data-view="license">${opt('', 'Any class', v.license)}${visibleLicenses.map(lt => opt(lt.id, lt.name, v.license)).join('')}</select></label>
+      <label>Status <select data-view="status">${opt('', 'All', v.status)}${opt('free', 'Unassigned', v.status)}${opt('seated', 'In a car', v.status)}</select></label>
+      <label>Tier <select data-view="tier">${opt('', 'All', v.tier)}${tiers.map(t => opt(t, DRIVER_TIERS[t].name, v.tier)).join('')}</select></label>
+      <span class="driver-toolbar-count">${shown} of ${G.drivers.length}</span>
+    </div>`;
+}
+
 function renderDrivers() {
   const container = document.getElementById('panel-drivers');
 
@@ -1025,8 +1065,12 @@ function renderDrivers() {
   if (G.drivers.length === 0) {
     rosterHtml += '<div class="empty-state">No drivers signed. Scout above.</div>';
   } else {
+    const visibleLicenses = LICENSE_TIERS.filter(lt => lt.pathway !== 'single_seater' || isSingleSeaterUnlocked());
+    const drivers = _filteredDrivers(visibleLicenses);
+    rosterHtml += _driverToolbar(visibleLicenses, drivers.length);
+    if (!drivers.length) rosterHtml += '<div class="empty-state">No driver matches these filters.</div>';
     rosterHtml += '<div class="driver-list">';
-    G.drivers.forEach(driver => {
+    drivers.forEach(driver => {
       const tierDef = DRIVER_TIERS[driver.tier];
       const stage   = getCareerStage(driver.age || 20);
       const age     = driver.age || 20;
@@ -1089,6 +1133,13 @@ function renderDrivers() {
   }
 
   container.innerHTML = scoutHtml + rosterHtml;
+
+  container.querySelectorAll('.driver-toolbar select').forEach(sel => {
+    sel.addEventListener('change', () => {
+      _driverView[sel.dataset.view] = sel.value;
+      renderDrivers();
+    });
+  });
 
   container.querySelectorAll('.scout-btn').forEach(btn => {
     btn.addEventListener('click', () => {

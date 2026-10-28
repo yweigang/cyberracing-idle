@@ -4,6 +4,14 @@
 
 const CHANGELOG = [
   {
+    version: '0.7.2',
+    date: '2026-10-28',
+    title: 'Roster sorting and filters',
+    changes: [
+      'The driver roster can be sorted by pace, tier, licenses, age, salary or name, and filtered by the class a driver can drive, whether they are in a car, and tier.',
+    ],
+  },
+  {
     version: '0.7.1',
     date: '2026-10-28',
     title: 'Scouting rebalance',

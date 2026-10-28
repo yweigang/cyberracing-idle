@@ -884,6 +884,19 @@ select { font-family: inherit; }
   font-weight: 600;
 }
 
+.driver-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+  margin-bottom: 10px;
+  font-size: 11px;
+  color: var(--text-3);
+}
+.driver-toolbar label { display: flex; align-items: center; gap: 6px; }
+.driver-toolbar-count { margin-left: auto; }
+
+.driver-toolbar select,
 .driver-assign select {
   background: var(--bg-3);
   border: 1px solid var(--border-hi);
