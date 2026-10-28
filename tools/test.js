@@ -708,7 +708,7 @@ test('REP resets with prestige; Fan Base keeps 1% per purchase', () => {
   assert(g.run('Math.max(0, G.reputation - G.prestige.repAtLastPrestige)') === 3000, 'only REP earned after the reset counts toward PP');
 });
 
-test('Fame tiers lift sponsors and cut salaries and scouting', () => {
+test('Fame tiers lift sponsors and cut salaries, not scouting', () => {
   const { g } = setup();
   const { driver } = carWithDriver(g, 'GT4', 'A');
   const at = rep => g.run(`G.reputation = ${rep}; ({ tier: getFameTier().label, sponsor: _sponsorMult(),
@@ -717,7 +717,7 @@ test('Fame tiers lift sponsors and cut salaries and scouting', () => {
   assert(none.tier === 'Unknown' && known.tier === 'Known' && legend.tier === 'Legendary', 'tiers by REP');
   assert(Math.abs(known.sponsor - none.sponsor - 0.10) < 1e-9, 'Known: +10% sponsors');
   assert(legend.salary === Math.round(none.salary * 0.8), 'Legendary: -20% salaries');
-  assert(legend.scout === Math.floor(none.scout * 0.75), 'Legendary: -25% scouting');
+  assert(legend.scout === none.scout, 'Legendary: scouting at full price');
 });
 
 // A car of any class, straight into the garage, with a fully licensed driver from `tier`

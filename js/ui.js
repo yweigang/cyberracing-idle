@@ -190,8 +190,7 @@ function startTeamRename() {
 
 // " (+20% sponsors, -10% driver salaries)" for a fame tier, or "" for none
 function _famePerks(t) {
-  const perks = [t.sponsor && `+${t.sponsor * 100}% sponsors`, t.salary && `-${t.salary * 100}% driver salaries`,
-    t.scout && `-${t.scout * 100}% scouting`].filter(Boolean);
+  const perks = [t.sponsor && `+${t.sponsor * 100}% sponsors`, t.salary && `-${t.salary * 100}% driver salaries`].filter(Boolean);
   return perks.length ? ` (${perks.join(', ')})` : '';
 }
 

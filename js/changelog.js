@@ -4,6 +4,14 @@
 
 const CHANGELOG = [
   {
+    version: '0.7.1',
+    date: '2026-10-28',
+    title: 'Scouting rebalance',
+    changes: [
+      'Fame no longer lowers scouting costs. Stacked with the Team Principal and Talent Academy it made new drivers far too cheap. Fame still lifts sponsor income and cuts driver salaries.',
+    ],
+  },
+  {
     version: '0.7.0',
     date: '2026-10-28',
     title: 'Fame and a fresh start',

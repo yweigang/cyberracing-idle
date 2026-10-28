@@ -1,5 +1,5 @@
 // Game release shown in the header; keep in step with js/changelog.js
-const GAME_VERSION = '0.7.0';
+const GAME_VERSION = '0.7.1';
 
 'use strict';
 
@@ -690,14 +690,14 @@ const PRESTIGE_PODIUM_SHARE = 0.4;
 const PRESTIGE_REP_PER_PP = 1000;   // REP gained since the last reset per PP
 const FAN_BASE_REP_SHARE = 0.01;    // REP kept through a reset per Fan Base purchase
 
-// Fame: REP reached in the current run lifts sponsor income and lowers driver salaries
-// and scouting costs. REP resets with prestige, so every run climbs these again.
+// Fame: REP reached in the current run lifts sponsor income and lowers driver salaries.
+// REP resets with prestige, so every run climbs these again.
 const FAME_TIERS = [
-  { rep: 0,      label: 'Unknown',   sponsor: 0,    salary: 0,    scout: 0    },
-  { rep: 25000,  label: 'Known',     sponsor: 0.10, salary: 0,    scout: 0    },
-  { rep: 75000,  label: 'Famous',    sponsor: 0.20, salary: 0.10, scout: 0    },
-  { rep: 150000, label: 'Star Team', sponsor: 0.30, salary: 0.15, scout: 0.15 },
-  { rep: 300000, label: 'Legendary', sponsor: 0.40, salary: 0.20, scout: 0.25 },
+  { rep: 0,      label: 'Unknown',   sponsor: 0,    salary: 0    },
+  { rep: 25000,  label: 'Known',     sponsor: 0.10, salary: 0    },
+  { rep: 75000,  label: 'Famous',    sponsor: 0.20, salary: 0.10 },
+  { rep: 150000, label: 'Star Team', sponsor: 0.30, salary: 0.15 },
+  { rep: 300000, label: 'Legendary', sponsor: 0.40, salary: 0.20 },
 ];
 const PRESTIGE_MIN_GAIN = 20;       // smallest PP gain that allows a reset
 const PRESTIGE_START_MONEY = 5000;  // money after a reset, before Investor Backing

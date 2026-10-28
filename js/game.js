@@ -956,10 +956,10 @@ function getFameTier(rep = G.reputation) {
   return FAME_TIERS.filter(t => rep >= t.rep).pop();
 }
 
-// What a scout of this tier costs after the Team Principal, fame and Talent Academy
+// What a scout of this tier costs after the Team Principal and Talent Academy
 function getScoutCost(tier) {
   const discount = G.prestige.permanentBonuses.scoutDiscount || 0;
-  return Math.floor(DRIVER_TIERS[tier].scoutCost * getTPBonuses().scoutCostMult * (1 - getFameTier().scout) * (1 - discount));
+  return Math.floor(DRIVER_TIERS[tier].scoutCost * getTPBonuses().scoutCostMult * (1 - discount));
 }
 
 // allowSpecial: false for drivers the game hands out, like the first one of a new game
