@@ -1,5 +1,5 @@
 // Game release shown in the header; keep in step with js/changelog.js
-const GAME_VERSION = '0.5.8';
+const GAME_VERSION = '0.6.0';
 
 'use strict';
 
@@ -470,7 +470,28 @@ const SEASON_LENGTH_SEC = 3600;
 
 const FIELD_SIZE = 12;          // AI rivals per class in a championship
 const FIELD_SPREAD = 0.36;      // AI ratings span fieldStrength × (1 ± spread/2)
+// Rival fields get stronger with each prestige reset, since drivers and the Performance
+// Programme carry over. The cap keeps a fully developed team clearly ahead.
+const FIELD_PRESTIGE_STEP = 0.15;   // field strength added per reset
+const FIELD_PRESTIGE_MAX = 1.6;     // strongest field multiplier
+const PRESTIGE_REWARD_SHARE = 0.5;  // prizes and REP grow by this share of the field's growth
 const RACE_NOISE = 0.07;        // per-round performance variance (std dev, before consistency)
+
+// Race incidents. Driver errors scale with (1 - consistency/100) and happen twice as
+// often in the wet; slow stops shrink as the pit crew trains. Retirements come on top
+// of the car's mechanical DNF chance; a car that finishes has at most one incident,
+// which costs a share of its race score (and places only if rivals were close).
+const DRIVER_CRASH_CHANCE = 0.03;       // DNF: driver error
+const RIVAL_CRASH_CHANCE = 0.01;        // DNF: taken out by a rival
+const SPIN_CHANCE = 0.10;               // incident: driver error
+const CONTACT_CHANCE = 0.05;            // incident: hit by a rival
+const SLOW_STOP_CHANCE = 0.08;          // incident: untrained crew; endurance x1.5
+const WET_ERROR_MULT = 2;
+const INCIDENT_LOSS = { spin: [0.04, 0.09], contact: [0.03, 0.08], pit: [0.02, 0.05] };
+const MECHANICAL_FAILURES = ['engine failure', 'gearbox failure', 'hydraulics leak', 'suspension failure',
+  'electrical fault', 'brake failure', 'overheating', 'fuel pressure loss'];
+const DRIVER_CRASHES = ['put it in the wall', 'beached it in the gravel', 'crashed out alone', 'lost it under braking'];
+const SPINS = ['spun', 'ran wide', 'locked up and went off', 'missed the braking point'];
 
 // Driver lineups: a car seats a lead driver plus co-drivers. Endurance series set a
 // lineupSize; a short lineup makes its fittest driver double-stint while fatigued.
@@ -504,6 +525,31 @@ const DRIVER_TIERS = {
 
 // The free Club Racer scout can only be used this often, so it can't be rerolled endlessly
 const FREE_SCOUT_COOLDOWN_SEC = 90;
+
+// Driver salaries rise with the class raced. The highest car class tier a driver raced
+// or sits in during the season sets the multiplier on their tier's base salary.
+const SALARY_CLASS_MULT = { 1: 1, 2: 1.5, 3: 2, 4: 3, 5: 4, 6: 5 };
+
+// Rare named drivers with a quirk, found when scouting at any tier. paceBonus is added to
+// their pace. noShow: chance to skip a round; incident: chance of a place-losing incident
+// while racing; classBoost: skill multiplier in some classes.
+const SPECIAL_DRIVER_CHANCE = 0.0001;   // per scout
+const SPECIAL_DRIVERS = [
+  { id: 'robin', name: 'Robin', quirk: 'Very fast, but only shows up for about half the races.', paceBonus: 15,
+    noShow: { chance: 0.5, line: 'But next time I will drive!' } },
+  { id: 'luca', name: 'Luca', quirk: 'Keeps speeding in the pit lane.', paceBonus: 5,
+    incident: { chance: 0.15, text: 'got a drive-through for speeding in the pit lane', loss: [0.05, 0.10] } },
+  { id: 'tarmo', name: 'Tarmo', quirk: 'Spins the car now and then.', paceBonus: 5,
+    incident: { chance: 0.20, text: 'spun the car', loss: [0.04, 0.09] } },
+  { id: 'matthias', name: 'Matthias', quirk: 'Gets distracted designing new liveries.', paceBonus: 5,
+    incident: { chance: 0.15, text: 'got distracted designing a new livery', loss: [0.03, 0.07] } },
+  { id: 'adrian', name: 'Adrian', quirk: 'Easily distracted by the crowd.', paceBonus: 5,
+    incident: { chance: 0.15, text: 'spotted a hot girl in the stands', loss: [0.03, 0.07] } },
+  { id: 'karl', name: 'Karl', quirk: 'Flies in LMP and Hypercar.', paceBonus: 0,
+    classBoost: { classes: ['LMP3', 'LMP2', 'HYPERCAR'], mult: 1.2 } },
+  { id: 'yannick', name: 'Yannick', quirk: 'Bad at qualifying and often chokes it.', paceBonus: 8,
+    incident: { chance: 0.30, text: 'choked in qualifying and started from the back', loss: [0.04, 0.09] } },
+];
 
 // Budget, floor, and ceiling per driver tier. paceMin guarantees a paid driver is
 // actually quick, whichever stat their budget favours.
@@ -848,12 +894,19 @@ const SPONSOR_SUFFIXES = ['Racing', 'Motorsport', 'Pro', 'Sport', 'Performance',
 // ─── Team Staff ────────────────────────────────────────────────────────────────
 
 const TP_TIERS = {
-  amateur:      { id: 'amateur',      label: 'Amateur',       color: '#888888', hireCost: 0,       salary: 0,      locked: false },
-  regional:     { id: 'regional',     label: 'Regional',      color: '#44aa44', hireCost: 50000,   salary: 10000,  locked: false },
-  national:     { id: 'national',     label: 'National',      color: '#4488ff', hireCost: 200000,  salary: 50000,  locked: false },
-  international:{ id: 'international',label: 'International', color: '#aa44ff', hireCost: 750000,  salary: 200000, locked: false },
-  legendary:    { id: 'legendary',    label: 'Legend',        color: '#ffaa00', hireCost: 0,       salary: 500000, locked: true  },
+  amateur:      { id: 'amateur',      label: 'Amateur',       color: '#888888', hireCost: 0,       salary: 0,      locked: false, maxClassTier: 2 },
+  regional:     { id: 'regional',     label: 'Regional',      color: '#44aa44', hireCost: 50000,   salary: 10000,  locked: false, maxClassTier: 3 },
+  national:     { id: 'national',     label: 'National',      color: '#4488ff', hireCost: 200000,  salary: 50000,  locked: false, maxClassTier: 4 },
+  international:{ id: 'international',label: 'International', color: '#aa44ff', hireCost: 750000,  salary: 200000, locked: false, maxClassTier: 6 },
+  legendary:    { id: 'legendary',    label: 'Legend',        color: '#ffaa00', hireCost: 0,       salary: 500000, locked: true,  maxClassTier: 6 },
 };
+
+// Each racing program has its own Team Principal. Their pace and REP bonuses reach only
+// the program's cars up to their tier's maxClassTier (car class tier).
+const TP_PROGRAMS = [
+  { id: 'gt_endurance',  label: 'GT & Endurance' },
+  { id: 'single_seater', label: 'Single-Seaters' },
+];
 
 const TP_STAT_CONFIG = {
   amateur:      { budgetMin: 50,  budgetMax: 70,  floor: 5,  ceiling: 25  },

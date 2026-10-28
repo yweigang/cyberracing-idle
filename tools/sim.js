@@ -212,6 +212,7 @@ for (let s = 1; s <= HOURS * 3600; s++) {
       const r = g.run('doPrestige()');
       console.log(`${fmtTime()}  PRESTIGE +${r.ppGain} PP`);
       g.run(`['wind_tunnel', 'head_start', 'dev_token'].forEach(id => { while (buyPrestigeItem(id).ok); })`);
+      lastSeason = g.run('G.season');  // a reset restarts at season 1
     }
   }
 

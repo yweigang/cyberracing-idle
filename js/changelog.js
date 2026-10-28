@@ -4,6 +4,30 @@
 
 const CHANGELOG = [
   {
+    version: '0.6.0',
+    date: '2026-10-28',
+    title: 'Team Principals per program, special drivers',
+    changes: [
+      'GT & Endurance and Single-Seaters each need their own Team Principal. Their pace and REP bonuses only reach their own program, and seniority sets the top class they can run: Amateurs up to GT3/F4, Regional up to LMP3/F3, National up to LMP2/F2, International everything. Your current principal now runs GT & Endurance.',
+      'Team-wide perks (crew and preparation costs, sponsors, scouting) come from whichever principal is best at each.',
+      'Driver salaries rise with the class raced: up to 1.5× in GT3/F4, 2× in LMP3/F3, 3× in LMP2/F2, 4× in Hypercar and 5× in F1. The highest class a driver raced or sat in during the season counts.',
+      'Special drivers have been added. They are very rare, and each one comes with a quirk.',
+    ],
+  },
+  {
+    version: '0.5.9',
+    date: '2026-10-28',
+    title: 'Tougher rivals and race incidents',
+    changes: [
+      'Retirements now say why: a mechanical failure, a driver error or being taken out by a rival. Low consistency and wet races make driver errors more likely.',
+      'Cars that finish can lose places to a spin, contact with a rival or a slow pit stop. A trained pit crew makes slow stops rarer.',
+      'The last result on a championship card names the incident, and hovering over a result in the round strip shows what happened.',
+      'Rival fields get 15% stronger with every prestige reset, up to +60% after four resets. Your drivers and the Performance Programme carry over, so titles no longer come for free.',
+      'Prizes and REP rise half as fast as the rivals: +7.5% per reset, up to +30%.',
+      'The Prestige Reset panel shows how strong the rivals are now and after the next reset.',
+    ],
+  },
+  {
     version: '0.5.8',
     date: '2026-10-28',
     title: 'Licenses in the garage',

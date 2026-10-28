@@ -592,6 +592,11 @@ select { font-family: inherit; }
 .res-cell.res-podium { background: #0a2a1a; color: var(--green); }
 .res-cell.res-points { background: #0a1a2a; color: var(--cyan); }
 .res-cell.res-dnf    { background: #2a0a12; color: var(--red); }
+.res-cell.res-noted  { text-decoration: underline dotted; cursor: help; }
+.champ-incident      { color: var(--amber); }
+.driver-special-badge { font-size: 10px; color: var(--amber); margin-top: 2px; }
+.staff-program-label  { font-size: 11px; letter-spacing: 1px; text-transform: uppercase; color: var(--text-2); margin: 10px 0 6px; }
+.staff-team-perks     { margin-top: 8px; color: var(--text-3); }
 
 .mini-standings {
   background: var(--bg-3);

@@ -895,16 +895,19 @@ function renderLastRound(entry) {
   const r = entry.lastRound;
   if (!r) return '<span class="champ-last">Lights out soon</span>';
   const wet = r.wet ? ' 🌧' : '';
-  if (r.dns) return `<span class="champ-last bad">Last: DNS${wet}</span>`;
-  if (r.dnf) return `<span class="champ-last bad">Last: DNF${wet}</span>`;
-  return `<span class="champ-last ${r.pos <= 3 ? 'good' : ''}">Last: P${r.pos}${wet} · +$${formatNumber(r.prize)}</span>`;
+  if (r.dns) return `<span class="champ-last bad">Last: DNS${wet}${r.dnsReason ? ' · ' + r.dnsReason : ''}</span>`;
+  if (r.dnf) return `<span class="champ-last bad">Last: DNF${wet}${r.dnfReason ? ' · ' + r.dnfReason : ''}</span>`;
+  const incident = r.incident ? ` · <span class="champ-incident">${describeIncident(r.incident)}</span>` : '';
+  return `<span class="champ-last ${r.pos <= 3 ? 'good' : ''}">Last: P${r.pos}${wet}${incident} · +$${formatNumber(r.prize)}</span>`;
 }
 
 function renderResultStrip(entry) {
   if (!entry.results || entry.results.length === 0) return '';
-  const cells = entry.results.map(res => {
+  const notes = entry.resultNotes || [];
+  const cells = entry.results.map((res, i) => {
     const cls = typeof res !== 'number' ? 'res-dnf' : res === 1 ? 'res-win' : res <= 3 ? 'res-podium' : res <= 10 ? 'res-points' : '';
-    return `<span class="res-cell ${cls}">${res}</span>`;
+    const note = notes[i] ? ` res-noted" title="${notes[i]}` : '';
+    return `<span class="res-cell ${cls}${note}">${res}</span>`;
   }).join('');
   return `<div class="result-strip">${cells}</div>`;
 }
@@ -986,7 +989,7 @@ function renderDrivers() {
         <div class="scout-rarity" style="color: ${isLocked ? '#444' : ''}">${def.rarity}</div>
         <div class="scout-budget" style="color: ${isLocked ? '#333' : ''}">${budgetLabel}</div>
         <div class="scout-budget" style="color: ${isLocked ? '#333' : ''}">Licenses: ${(TIER_STARTING_LICENSES[tier] || ['GT4']).filter(id => isSingleSeaterUnlocked() || id[0] !== 'F').join(', ')}</div>
-        <div class="scout-budget" style="color: ${isLocked ? '#333' : ''}">Pace ${cfg.paceMin}+ · ${def.salary ? `$${formatNumber(def.salary)}/season salary` : isLocked ? 'Contract prepaid' : 'No salary'}</div>
+        <div class="scout-budget" style="color: ${isLocked ? '#333' : ''}">Pace ${cfg.paceMin}+ · ${def.salary ? `<span title="Rises with the class raced, up to ×${Math.max(...Object.values(SALARY_CLASS_MULT))}">$${formatNumber(def.salary)}/season base salary</span>` : isLocked ? 'Contract prepaid' : 'No salary'}</div>
         ${isLocked
           ? `<div class="scout-locked-msg">Unlocked via Prestige</div>`
           : `<button class="btn scout-btn ${canAfford ? '' : 'disabled'}"
@@ -996,7 +999,7 @@ function renderDrivers() {
         }
       </div>`;
   });
-  scoutHtml += '</div>';
+  scoutHtml += '</div><div class="staff-section-desc">Once in a long while, scouting turns up a special driver.</div>';
 
   // Driver roster
   let rosterHtml = '<div class="section-header">DRIVER ROSTER</div>';
@@ -1033,6 +1036,7 @@ function renderDrivers() {
             <div class="driver-name">${driver.name}</div>
             <div class="driver-tier" style="color: ${tierDef.color}">${tierDef.name}</div>
             <div class="driver-primary-badge" style="color: ${tierDef.color}">★ ${primaryLabel}</div>
+            ${getSpecialDef(driver) ? `<div class="driver-special-badge">✦ Special · ${getSpecialDef(driver).quirk}</div>` : ''}
             <div class="driver-career-row">
               <span class="driver-age">Age ${age}</span>
               <span class="driver-stage-badge" style="color:${stage.color};border-color:${stage.color}">${stage.label} ${stage.trajectory}</span>
@@ -1043,7 +1047,7 @@ function renderDrivers() {
           <div class="driver-meta">
             <span class="driver-xp" title="Banked XP becomes stat points at season end">XP ${Math.floor(driver.xp)} · +${Math.floor(driver.xp / XP_PER_STAT_POINT)} stat pts</span>
             <span class="driver-ret-age">Retires ~${retAge}</span>
-            ${getDriverSalary(driver) ? `<span class="driver-salary">$${formatNumber(getDriverSalary(driver))}/season</span>` : ''}
+            ${getDriverSalary(driver) ? `<span class="driver-salary" title="Base $${formatNumber(DRIVER_TIERS[driver.tier].salary)} ×${SALARY_CLASS_MULT[getDriverSalaryClassTier(driver)] || 1} for the highest class raced or seated in this season">$${formatNumber(getDriverSalary(driver))}/season</span>` : ''}
           </div>
           ${renderDriverLicenses(driver)}
           <div class="driver-assign">
@@ -1460,9 +1464,57 @@ function _renderStaffCandidateGrid(candidates, statKeys, statLabels, tiersDef, h
   return html;
 }
 
+// Highest class a principal tier can run in a program, e.g. "LMP3"
+function _tpTopClass(tier, program) {
+  const classes = CAR_CLASSES.filter(c => (c.pathway === 'single_seater' ? 'single_seater' : 'gt_endurance') === program
+    && c.tier <= TP_TIERS[tier].maxClassTier);
+  return classes.length ? classes[classes.length - 1].name : '—';
+}
+
+// One program's Team Principal: the hiring grid, an empty slot or the hired principal
+function _renderProgramTP(prog) {
+  const tp = G.teamPrincipals[prog.id];
+  let html = `<div class="staff-program-label">${prog.label}</div>`;
+  if (_hiringTP === prog.id) {
+    const ranges = Object.values(TP_TIERS).filter(t => !t.locked).map(t => `${t.label} up to ${_tpTopClass(t.id, prog.id)}`).join(' · ');
+    html += `<div class="staff-section-desc">Choose the ${prog.label} Team Principal. Seniority sets the classes they can run: ${ranges}.</div>`;
+    return html + _renderStaffCandidateGrid(_tpCandidates, TP_STAT_KEYS, TP_STAT_LABELS, TP_TIERS, 'tp-idx', 'cancel-tp');
+  }
+  if (!tp) {
+    return html + `
+      <div class="staff-empty">
+        <span>No ${prog.label} Team Principal. Hire one to boost these cars.</span>
+        <button class="btn start-hire-tp" data-program="${prog.id}">Hire Team Principal</button>
+      </div>`;
+  }
+  const tpTierDef = TP_TIERS[tp.tier];
+  const buyout = Math.floor(tpTierDef.hireCost * 0.25);
+  const b = getTPBonuses({ classId: prog.id === 'single_seater' ? 'F4' : 'GT4' });
+  const tooJunior = G.cars.filter(c => getCarProgram(c) === prog.id && !canTPRunClass(tp, c.classId)).map(c => c.name);
+  return html + `
+    <div class="staff-card" style="--staff-color: ${tpTierDef.color}">
+      <div class="staff-card-header">
+        <div>
+          <div class="staff-name">${tp.name}</div>
+          <div class="staff-tier-label" style="color:${tpTierDef.color}">${tpTierDef.label} · ${prog.label} · runs up to ${_tpTopClass(tp.tier, prog.id)}</div>
+        </div>
+        <div class="staff-salary-badge">${tp.salary > 0 ? '$' + formatNumber(tp.salary) + '/season' : 'No salary'}</div>
+      </div>
+      <div class="staff-stats-grid">${_renderStaffStatBlock(tp, TP_STAT_KEYS, TP_STAT_LABELS)}</div>
+      <div class="staff-bonuses">
+        <span title="${prog.label} cars up to ${_tpTopClass(tp.tier, prog.id)}">+${(b.paceMult*100).toFixed(1)}% pace</span>
+        <span title="${prog.label} cars up to ${_tpTopClass(tp.tier, prog.id)}">+${b.strategyRep} REP/round</span>
+      </div>
+      ${tooJunior.length ? `<div class="lineup-note warn">⚠ Too junior to run ${tooJunior.join(', ')}: no bonuses there.</div>` : ''}
+      <div class="staff-card-actions">
+        <button class="btn btn-danger fire-tp-btn" data-program="${prog.id}">Fire</button>
+        <button class="btn upgrade-tp-btn" data-program="${prog.id}">${buyout > 0 ? 'Replace (buyout $' + formatNumber(buyout) + ')' : 'Replace'}</button>
+      </div>
+    </div>`;
+}
+
 function renderStaff() {
   const container = document.getElementById('panel-staff');
-  const tp = G.teamPrincipal;
 
   // ── Season salary preview (staff and drivers)
   const totalSalary = getSeasonSalaryTotal();
@@ -1476,45 +1528,17 @@ function renderStaff() {
       </div>
     </div>`;
 
-  // ── Team Principal section
-  html += `<div class="section-header">TEAM PRINCIPAL</div>`;
-
-  if (_hiringTP) {
-    html += `<div class="staff-section-desc">Choose your Team Principal:</div>`;
-    html += _renderStaffCandidateGrid(_tpCandidates, TP_STAT_KEYS, TP_STAT_LABELS, TP_TIERS, 'tp-idx', 'cancel-tp');
-  } else if (!tp) {
-    html += `
-      <div class="staff-empty">
-        <span>No Team Principal. Hire one to unlock bonuses.</span>
-        <button class="btn" id="start-hire-tp">Hire Team Principal</button>
-      </div>`;
-  } else {
-    const tpTierDef = TP_TIERS[tp.tier];
-    const buyout = Math.floor(tpTierDef.hireCost * 0.25);
-    const statsHtml = _renderStaffStatBlock(tp, TP_STAT_KEYS, TP_STAT_LABELS);
-    const bonuses = getTPBonuses();
-    html += `
-      <div class="staff-card" style="--staff-color: ${tpTierDef.color}">
-        <div class="staff-card-header">
-          <div>
-            <div class="staff-name">${tp.name}</div>
-            <div class="staff-tier-label" style="color:${tpTierDef.color}">${tpTierDef.label} · Team Principal</div>
-          </div>
-          <div class="staff-salary-badge">${tp.salary > 0 ? '$' + formatNumber(tp.salary) + '/season' : 'No salary'}</div>
-        </div>
-        <div class="staff-stats-grid">${statsHtml}</div>
-        <div class="staff-bonuses">
-          <span>+${(bonuses.paceMult*100).toFixed(1)}% pace</span>
-          <span>+${bonuses.strategyRep} REP/round</span>
-          <span>-${((1-bonuses.upgradeCostMult)*100).toFixed(0)}% crew &amp; prep costs</span>
-          <span>+${(bonuses.sponsorMult*100).toFixed(1)}% sponsors</span>
-          <span>-${((1-bonuses.scoutCostMult)*100).toFixed(0)}% scouting</span>
-        </div>
-        <div class="staff-card-actions">
-          <button class="btn btn-danger fire-tp-btn">Fire</button>
-          <button class="btn upgrade-tp-btn">${buyout > 0 ? 'Replace (buyout $' + formatNumber(buyout) + ')' : 'Replace'}</button>
-        </div>
-      </div>`;
+  // ── Team Principals: one per program; Single-Seaters once that pathway is open
+  html += `<div class="section-header">TEAM PRINCIPALS</div>
+    <div class="staff-section-desc">Each program needs its own Team Principal. Pace and REP bonuses reach only that program's cars, up to the classes their seniority allows.</div>`;
+  TP_PROGRAMS.filter(p => p.id === 'gt_endurance' || isSingleSeaterUnlocked() || G.teamPrincipals[p.id])
+    .forEach(prog => { html += _renderProgramTP(prog); });
+  if (getTeamPrincipals().length) {
+    const team = getTPBonuses();
+    html += `<div class="staff-bonuses staff-team-perks" title="Each perk comes from whichever principal offers the most">
+      Team-wide: <span>-${((1-team.upgradeCostMult)*100).toFixed(0)}% crew &amp; prep costs</span>
+      <span>+${(team.sponsorMult*100).toFixed(1)}% sponsors</span>
+      <span>-${((1-team.scoutCostMult)*100).toFixed(0)}% scouting</span></div>`;
   }
 
   // ── Race Engineers section
@@ -1596,31 +1620,20 @@ function renderStaff() {
 
   container.innerHTML = html;
 
-  // ── Events: hire TP
-  const startHireTPBtn = container.querySelector('#start-hire-tp');
-  if (startHireTPBtn) {
-    startHireTPBtn.addEventListener('click', () => {
-      _hiringTP = true;
+  // ── Events: hire or replace a program's TP
+  container.querySelectorAll('.start-hire-tp, .upgrade-tp-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      _hiringTP = btn.dataset.program;
       _tpCandidates = generateTPOptions();
       renderStaff();
     });
-  }
-
-  // Upgrade/Replace TP button
-  const upgradeTPBtn = container.querySelector('.upgrade-tp-btn');
-  if (upgradeTPBtn) {
-    upgradeTPBtn.addEventListener('click', () => {
-      _hiringTP = true;
-      _tpCandidates = generateTPOptions();
-      renderStaff();
-    });
-  }
+  });
 
   // Hire TP from candidates
   container.querySelectorAll('[data-tp-idx]').forEach(btn => {
     btn.addEventListener('click', () => {
       const cand = _tpCandidates[parseInt(btn.dataset.tpIdx)];
-      const result = hireTP(cand);
+      const result = hireTP(cand, _hiringTP);
       if (result.ok) { _hiringTP = false; _tpCandidates = []; }
       else addNotification(result.msg, 'error');
       renderStaff();
@@ -1636,13 +1649,12 @@ function renderStaff() {
   });
 
   // Fire TP
-  const fireTPBtn = container.querySelector('.fire-tp-btn');
-  if (fireTPBtn) {
-    fireTPBtn.addEventListener('click', () => {
-      fireTP();
+  container.querySelectorAll('.fire-tp-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      fireTP(btn.dataset.program);
       renderStaff();
     });
-  }
+  });
 
   // Hire RE buttons (open candidates for that car)
   container.querySelectorAll('.hire-re-btn').forEach(btn => {
@@ -1828,6 +1840,12 @@ function renderPrestige() {
   // ── Prestige section
   const ppGain = calcPrestigePoints();
   const canP = canPrestige();
+  const resets = G.prestige.prestigeCount || 0;
+  const fieldPct = r => Math.round((getFieldMult(r) - 1) * 100);
+  const rewardPct = r => Math.round((getFieldMult(r) - 1) * PRESTIGE_REWARD_SHARE * 100);
+  const fieldNote = getFieldMult(resets + 1) > getFieldMult(resets)
+    ? `Rival fields are +${fieldPct(resets)}% stronger than in your first run; after this reset +${fieldPct(resets + 1)}%, with prizes and REP +${rewardPct(resets + 1)}%.`
+    : `Rival fields are at their strongest: +${fieldPct(resets)}%, with prizes and REP +${rewardPct(resets)}%.`;
   html += `
     <div class="section-header">PRESTIGE RESET</div>
     <div class="prestige-info">
@@ -1835,6 +1853,7 @@ function renderPrestige() {
       <div class="prestige-gain">Resetting now grants <span class="pp-gain">+${ppGain} PP</span>
         <span class="prestige-warning">(titles and podiums since the last reset, 1 PP per ${formatNumber(PRESTIGE_REP_PER_PP)} REP gained, ${HQ_PP_PER_LEVEL} PP per HQ level, sponsor PP bonuses)</span></div>
       <div class="prestige-warning">Starts the team over: $${formatNumber(getPrestigeStartMoney())}, one stock GT4 (plus a car per Development Token), no sponsors, HQ rebuilt. Drivers, licenses, REP, garage, staff and PP stay. The team starts again at season 1, with no salaries due.
+        <br>${fieldNote}
         ${_prestigeBuyWarning(ppGain)}
         ${(G.prestige.prestigeCount || 0) === 0 ? '<br>Your first reset unlocks the <b>Single-Seater Pathway</b> (F4 → F1).' : ''}</div>
       <button class="btn btn-prestige ${canP ? '' : 'disabled'}" id="prestige-btn" ${canP ? '' : 'disabled'}>

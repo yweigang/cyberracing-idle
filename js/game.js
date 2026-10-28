@@ -64,7 +64,7 @@ function createDefaultState() {
     sponsors: [null, null, null, null, null],
     sponsorOffers: null,       // { season, offers } — fixed sponsor offers for the current season
     hasFactoryLivery: false,
-    teamPrincipal: null,
+    teamPrincipals: { gt_endurance: null, single_seater: null },
     raceEngineers: {},
     spareEngineers: [],        // paid race engineers whose car was sold, waiting for a car
     licensePtMultiplier: LICENSE_CONFIG.defaultMultiplier,
@@ -144,6 +144,15 @@ function calcDriverSkill(driver, format, wet) {
   return pace * 0.7 + driver.tyreManagement * 0.3;
 }
 
+const getSpecialDef = driver => (driver && driver.special && SPECIAL_DRIVERS.find(s => s.id === driver.special)) || null;
+
+// Skill in a particular car: special drivers can be stronger in some classes
+function calcDriverSkillInCar(driver, car, format, wet) {
+  const special = getSpecialDef(driver);
+  const boost = special && special.classBoost && special.classBoost.classes.includes(car.classId) ? special.classBoost.mult : 1;
+  return calcDriverSkill(driver, format, wet) * boost;
+}
+
 // Drivers seated in a car: the lead driver first, then co-drivers
 function getCarLineup(car) {
   return [car.driverId, ...(car.coDriverIds || [])]
@@ -186,30 +195,32 @@ function getMissingDrivers(car, lineupSize = 1) {
 
 // Stint-averaged skill of the first `lineupSize` drivers. Stints nobody covers are
 // driven by the fittest driver at reduced, fatigued skill.
-function calcLineupSkill(car, format = 'sprint', wet = false, lineupSize = 1) {
-  const lineup = getCarLineup(car).slice(0, lineupSize);
+function calcLineupSkill(car, format = 'sprint', wet = false, lineupSize = 1, drivers) {
+  const lineup = drivers || getCarLineup(car).slice(0, lineupSize);
   if (!lineup.length) return 0;
-  const stints = lineup.map(d => calcDriverSkill(d, format, wet));
+  const stints = lineup.map(d => calcDriverSkillInCar(d, car, format, wet));
   const fittest = lineup.reduce((a, b) => ((b.fitness || 0) > (a.fitness || 0) ? b : a));
-  const fatigued = calcDriverSkill(fittest, format, wet) * (FATIGUE_SKILL_BASE + (fittest.fitness || 0) / FATIGUE_FITNESS_DIV);
+  const fatigued = calcDriverSkillInCar(fittest, car, format, wet) * (FATIGUE_SKILL_BASE + (fittest.fitness || 0) / FATIGUE_FITNESS_DIV);
   while (stints.length < lineupSize) stints.push(fatigued);
   return stints.reduce((a, b) => a + b, 0) / lineupSize;
 }
 
 // Full race rating of a car with its current lineup and staff
-function calcCarRating(car, format = 'sprint', wet = false, lineupSize = 1) {
+// drivers: who actually races (defaults to the car's first lineupSize drivers)
+function calcCarRating(car, format = 'sprint', wet = false, lineupSize = 1, drivers) {
   const reB = getREBonuses(car.id);
-  const driverMult = 1 + calcLineupSkill(car, format, wet, lineupSize) / 100 + getTPBonuses().paceMult;
+  const driverMult = 1 + calcLineupSkill(car, format, wet, lineupSize, drivers) / 100 + getTPBonuses(car).paceMult;
   return calcCarBaseRating(car) * driverMult * (1 + reB.setupBonus) * (1 + getPitCrewBonus(car, format))
     * G.prestige.permanentBonuses.incomeMultiplier * (1 + getHQLevel('simulator') * 0.015);
 }
 
 // Chance per round that the car retires. Endurance rounds are twice as punishing,
 // and every missing driver in the lineup adds fatigue mistakes.
-function calcDNFChance(car, format = 'sprint', lineupSize = 1) {
+// absent: lineup drivers who skipped the round, which leaves the lineup short too
+function calcDNFChance(car, format = 'sprint', lineupSize = 1, absent = 0) {
   const reB = getREBonuses(car.id);
   const base = Math.max(0.01, 0.10 - car.upgrades.reliability * 0.01);
-  const fatigue = 1 + SHORT_LINEUP_DNF_PENALTY * getMissingDrivers(car, lineupSize);
+  const fatigue = 1 + SHORT_LINEUP_DNF_PENALTY * (getMissingDrivers(car, lineupSize) + absent);
   return base * (format === 'endurance' ? 2 : 1) * fatigue * Math.max(0, 1 - reB.reliBonus * 2);
 }
 
@@ -649,23 +660,34 @@ function _gauss() {
   return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
 }
 
+// Multiplier on every rival field after the given number of prestige resets
+function getFieldMult(resets = G.prestige.prestigeCount || 0) {
+  return Math.min(FIELD_PRESTIGE_MAX, 1 + FIELD_PRESTIGE_STEP * resets);
+}
+
+// Prizes and REP rise with the field, at PRESTIGE_REWARD_SHARE of its rate
+function getPrestigeRewardMult() {
+  return 1 + (getFieldMult() - 1) * PRESTIGE_REWARD_SHARE;
+}
+
 // AI field strength for one class in a series
 function getFieldStrength(champDef, classId) {
   const fs = champDef.fieldStrength;
-  return fs[classId] || fs[champDef.allowedClasses[0]];
+  return Math.round((fs[classId] || fs[champDef.allowedClasses[0]]) * getFieldMult());
 }
 
 // P1 round prize for a class; higher classes in a series pay proportionally more
 function getRoundPrize(champDef, classId) {
   const cls = getCarClassById(classId);
-  return cls ? cls.baseIncomePerLap * champDef.prizeMult : 0;
+  return cls ? cls.baseIncomePerLap * champDef.prizeMult * getPrestigeRewardMult() : 0;
 }
 
 // P1 round REP for a class. Faster classes face stronger fields, so they earn more:
 // the square root of their field strength over the series' slowest class.
 function getRoundRep(champDef, classId) {
   const slowest = Math.min(...champDef.allowedClasses.map(id => getFieldStrength(champDef, id)));
-  return champDef.repPerRound * Math.sqrt(getFieldStrength(champDef, classId || champDef.allowedClasses[0]) / slowest);
+  return champDef.repPerRound * Math.sqrt(getFieldStrength(champDef, classId || champDef.allowedClasses[0]) / slowest)
+    * getPrestigeRewardMult();
 }
 
 function generateField(champDef, classId) {
@@ -693,6 +715,40 @@ function getStandingPosition(entry) {
   return getStandings(entry).findIndex(r => r.isPlayer) + 1;
 }
 
+const _pick = list => list[Math.floor(Math.random() * list.length)];
+const _lerp = ([lo, hi]) => lo + Math.random() * (hi - lo);
+
+// Chance of a driver error, from the lineup's average consistency
+function calcDriverErrorChance(base, consistency, wet) {
+  return base * (1 - consistency / 100) * (wet ? WET_ERROR_MULT : 1);
+}
+
+// Why the car retires this round, or null when it finishes
+function _rollRetirement(car, format, size, lineup, consistency, wet, entry, absent) {
+  if (Math.random() < calcDNFChance(car, format, size, absent)) return _pick(MECHANICAL_FAILURES);
+  if (Math.random() < calcDriverErrorChance(DRIVER_CRASH_CHANCE, consistency, wet))
+    return `${_pick(lineup).name} ${_pick(DRIVER_CRASHES)}`;
+  if (Math.random() < RIVAL_CRASH_CHANCE) return `taken out by ${_pick(entry.field).name}`;
+  return null;
+}
+
+// At most one incident for a finishing car: { type, text, loss }, or null
+function _rollIncident(car, format, lineup, consistency, wet, entry) {
+  for (const d of lineup) {
+    const quirk = getSpecialDef(d) && getSpecialDef(d).incident;
+    if (quirk && Math.random() < quirk.chance)
+      return { type: 'special', text: `${d.name} ${quirk.text}`, loss: _lerp(quirk.loss) };
+  }
+  if (Math.random() < calcDriverErrorChance(SPIN_CHANCE, consistency, wet))
+    return { type: 'spin', text: `${_pick(lineup).name} ${_pick(SPINS)}`, loss: _lerp(INCIDENT_LOSS.spin) };
+  if (Math.random() < CONTACT_CHANCE)
+    return { type: 'contact', text: `hit by ${_pick(entry.field).name}`, loss: _lerp(INCIDENT_LOSS.contact) };
+  const crew = G.pitCrew.level / PIT_CREW.maxLevel * (getCrewCoveredCarIds().includes(car.id) ? 1 : PIT_CREW.uncoveredShare);
+  if (Math.random() < SLOW_STOP_CHANCE * (1 - crew) * (format === 'endurance' ? 1.5 : 1))
+    return { type: 'pit', text: 'slow pit stop', loss: _lerp(INCIDENT_LOSS.pit) };
+  return null;
+}
+
 // Simulate one round: positions, points, prize money and REP
 function runChampionshipRound(entry) {
   const champDef = getChampionshipById(entry.definitionId);
@@ -700,19 +756,28 @@ function runChampionshipRound(entry) {
   const wet = Math.random() < (champDef.wetChance || 0);
   const format = champDef.format || 'sprint';
   const size = getLineupSize(champDef);
-  const lineup = car ? getCarLineup(car).slice(0, size) : [];
+  const seated = car ? getCarLineup(car).slice(0, size) : [];
+  // Drivers who skip the round leave the rest of the lineup to cover their stints
+  const absent = seated.filter(d => { const s = getSpecialDef(d); return s && s.noShow && Math.random() < s.noShow.chance; });
+  const lineup = seated.filter(d => !absent.includes(d));
+  const absentText = absent.map(d => `${d.name} did not show up: "${getSpecialDef(d).noShow.line}"`).join('; ') || null;
+  if (car) lineup.forEach(d => { d.seasonClassTier = Math.max(d.seasonClassTier || 0, getCarClassById(car.classId).tier); });
 
   const aiScores = entry.field.map(r => r.rating * (1 + _gauss() * RACE_NOISE));
-  let pos = null, dnf = false, dns = false;
+  let pos = null, dnf = false, dns = false, dnfReason = null, incident = null;
+  const dnsReason = !car || lineup.length ? null : seated.length ? absentText : 'no driver';
+  const consistency = lineup.length ? lineup.reduce((sum, d) => sum + (d.consistency || 0), 0) / lineup.length : 0;
   if (!car || !lineup.length) {
     dns = true;
-  } else if (Math.random() < calcDNFChance(car, format, size)) {
+  } else if ((dnfReason = _rollRetirement(car, format, size, lineup, consistency, wet, entry, absent.length))) {
     dnf = true;
   } else {
-    const consistency = lineup.reduce((sum, d) => sum + (d.consistency || 0), 0) / lineup.length;
     const noise = RACE_NOISE * (1 - consistency / 200);
-    const score = calcCarRating(car, format, wet, size) * (1 + _gauss() * noise);
-    pos = 1 + aiScores.filter(sc => sc > score).length;
+    const score = calcCarRating(car, format, wet, size, lineup) * (1 + _gauss() * noise);
+    const rankOf = sc => 1 + aiScores.filter(ai => ai > sc).length;
+    incident = _rollIncident(car, format, lineup, consistency, wet, entry);
+    pos = rankOf(incident ? score * (1 - incident.loss) : score);
+    if (incident) incident = { type: incident.type, text: incident.text, lost: pos - rankOf(score) };
   }
 
   // AI points: rank AI by score, shifted one place down behind the player
@@ -725,19 +790,28 @@ function runChampionshipRound(entry) {
   if (pos !== null) {
     points = getRoundPoints(pos);
     prize = Math.round(getRoundPrize(champDef, entry.classId) * getPrizeFactor(pos) * (1 + getREBonuses(car.id).pitBonus));
-    rep = Math.round(getRoundRep(champDef, entry.classId) * getPrizeFactor(pos)) + getTPBonuses().strategyRep;
+    rep = Math.round(getRoundRep(champDef, entry.classId) * getPrizeFactor(pos)) + getTPBonuses(car).strategyRep;
   }
   entry.points += points;
   entry.prizeEarned += prize;
   entry.repEarned += rep;
   entry.results.push(dns ? 'DNS' : dnf ? 'DNF' : pos);
+  entry.resultNotes = entry.resultNotes || [];
+  entry.resultNotes[entry.results.length - 1] = [dnsReason || absentText, dnfReason || (incident && describeIncident(incident))]
+    .filter(Boolean).join('; ') || null;
   entry.currentRound++;
-  entry.lastRound = { pos, dnf, dns, wet, prize, rep, points, driverId: lineup[0] ? lineup[0].id : null,
+  entry.lastRound = { pos, dnf, dns, dnsReason, absentText, dnfReason, incident, wet, prize, rep, points, driverId: lineup[0] ? lineup[0].id : null,
     driverIds: lineup.map(d => d.id), missing: car ? getMissingDrivers(car, size) : 0 };
   G.money += prize;
   G.totalEarned += prize;
   G.reputation += rep;
   return entry.lastRound;
+}
+
+// "Quinn spun, lost 3 places" / "hit by Kaiju Racing, no places lost"
+function describeIncident(incident) {
+  const lost = incident.lost === 1 ? 'lost 1 place' : incident.lost > 1 ? `lost ${incident.lost} places` : 'no places lost';
+  return `${incident.text}, ${lost}`;
 }
 
 // Final standings payout and completion record
@@ -835,7 +909,7 @@ function generateDriverStats(tier, randFn) {
 
 // Names of everyone on the team (drivers and staff), plus any extra people passed in
 function _takenNames(extra = []) {
-  const staff = [G.teamPrincipal, ...Object.values(G.raceEngineers || {}), ...(G.spareEngineers || [])].filter(Boolean);
+  const staff = [...getTeamPrincipals(), ...Object.values(G.raceEngineers || {}), ...(G.spareEngineers || [])].filter(Boolean);
   return new Set([...G.drivers, ...staff, ...extra].map(p => p.name));
 }
 
@@ -865,9 +939,16 @@ function getFreeScoutWait(at = Date.now()) {
   return Math.max(0, ((G.nextFreeScoutAt || 0) - at) / 1000);
 }
 
+// Highest car class tier a driver raced or sits in this season (0 for neither)
+function getDriverSalaryClassTier(driver) {
+  const car = driver.carId && G.cars.find(c => c.id === driver.carId);
+  return Math.max(car ? getCarClassById(car.classId).tier : 0, driver.seasonClassTier || 0);
+}
+
 function getDriverSalary(driver) {
   const tierDef = DRIVER_TIERS[driver.tier];
-  return tierDef ? tierDef.salary || 0 : 0;
+  const base = tierDef ? tierDef.salary || 0 : 0;
+  return Math.round(base * (SALARY_CLASS_MULT[getDriverSalaryClassTier(driver)] || 1));
 }
 
 function scoutDriver(tier) {
@@ -883,8 +964,24 @@ function scoutDriver(tier) {
   G.money -= effectiveScoutCost;
   if (freeScout) G.nextFreeScoutAt = Date.now() + FREE_SCOUT_COOLDOWN_SEC * 1000;
 
+  const driver = _newDriver(tier, _rollSpecialDriver());
+  const special = getSpecialDef(driver);
+  if (special) addNotification(`A special driver joined: ${driver.name}! ${special.quirk}`, 'prestige');
+  return { ok: true, driver };
+}
+
+// A special driver nobody on the team is yet, at SPECIAL_DRIVER_CHANCE, or null
+function _rollSpecialDriver() {
+  if (Math.random() >= SPECIAL_DRIVER_CHANCE) return null;
+  const free = SPECIAL_DRIVERS.filter(s => !G.drivers.some(d => d.special === s.id));
+  return free.length ? _pick(free) : null;
+}
+
+// Creates a driver of a tier and adds them to the roster; special: a SPECIAL_DRIVERS entry
+function _newDriver(tier, special = null) {
   const { stats, primaryStat } = generateDriverStats(tier, Math.random);
-  const name = _uniqueName(DRIVER_FIRST_NAMES, DRIVER_LAST_NAMES);
+  const name = special ? special.name : _uniqueName(DRIVER_FIRST_NAMES, DRIVER_LAST_NAMES);
+  if (special) stats.pace = Math.min(100, stats.pace + (special.paceBonus || 0));
 
   const ageRange = DRIVER_AGE_RANGES[tier] || { min: 18, max: 35 };
   const age = ageRange.min + Math.floor(Math.random() * (ageRange.max - ageRange.min + 1));
@@ -908,15 +1005,16 @@ function scoutDriver(tier) {
     licensePoints: Object.fromEntries(LICENSE_TIERS.map(lt => [lt.id,
       (TIER_STARTING_LICENSES[tier] || ['GT4']).includes(lt.id) ? lt.pointsRequired : 0])),
   };
+  if (special) driver.special = special.id;
   G.drivers.push(driver);
-  return { ok: true, driver };
+  return driver;
 }
 
 // Pace multiplier from the lead driver (1.0 if no driver), as shown on the car card
 function calcDriverPaceMult(car) {
-  const tpMot = getTPBonuses().paceMult;
+  const tpMot = getTPBonuses(car).paceMult;
   const driver = car.driverId ? G.drivers.find(d => d.id === car.driverId) : null;
-  return 1 + calcDriverSkill(driver, 'sprint', false) / 100 + tpMot;
+  return 1 + calcDriverSkillInCar(driver, car, 'sprint', false) / 100 + tpMot;
 }
 
 // Takes a driver out of their car. If the lead leaves, the first co-driver takes over.
@@ -1241,9 +1339,43 @@ function generateBudgetStats(statKeys, statConfig, tier, randFn) {
   return { stats, primaryStat: primaryKey };
 }
 
-// Returns computed bonuses from the active TP (or all zeros if none)
-function getTPBonuses() {
-  const tp = G.teamPrincipal;
+// Racing program a car belongs to
+function getCarProgram(car) {
+  return getCarClassById(car.classId).pathway === 'single_seater' ? 'single_seater' : 'gt_endurance';
+}
+
+function getTeamPrincipals() {
+  return Object.values(G.teamPrincipals || {}).filter(Boolean);
+}
+
+// Whether a principal's tier is senior enough to run a car class
+function canTPRunClass(tp, classId) {
+  return getCarClassById(classId).tier <= TP_TIERS[tp.tier].maxClassTier;
+}
+
+// The principal running a car: its program's, if senior enough for the car's class
+function getCarTP(car) {
+  const tp = (G.teamPrincipals || {})[getCarProgram(car)];
+  return tp && canTPRunClass(tp, car.classId) ? tp : null;
+}
+
+// With a car: the pace and REP bonuses of the principal running it. Without: the
+// team-wide perks, each taken from whichever principal offers the most.
+function getTPBonuses(car) {
+  if (car) return _tpBonuses(getCarTP(car));
+  const all = getTeamPrincipals().map(_tpBonuses);
+  if (!all.length) return _tpBonuses(null);
+  return {
+    paceMult: 0,
+    strategyRep: 0,
+    upgradeCostMult: Math.min(...all.map(b => b.upgradeCostMult)),
+    sponsorMult:     Math.max(...all.map(b => b.sponsorMult)),
+    scoutCostMult:   Math.min(...all.map(b => b.scoutCostMult)),
+  };
+}
+
+// Bonuses from one principal (or all zeros for none)
+function _tpBonuses(tp) {
   if (!tp) return { paceMult: 0, strategyRep: 0, upgradeCostMult: 1, sponsorMult: 0, scoutCostMult: 1 };
   return {
     paceMult:        tp.motivation         / 100 * 0.20,       // up to +20% driver pace
@@ -1310,29 +1442,28 @@ function generateREOptions() {
   return options;
 }
 
-function hireTP(staffData) {
-  if (G.teamPrincipal) {
-    const existingTierDef = TP_TIERS[G.teamPrincipal.tier];
-    const buyout = Math.floor(existingTierDef.hireCost * 0.25);
-    if (G.money < buyout) return { ok: false, msg: `Buying out current TP costs $${formatNumber(buyout)}.` };
-    G.money -= buyout;
-    addNotification(`Bought out ${G.teamPrincipal.name} for $${formatNumber(buyout)}.`, 'info');
-  }
+function hireTP(staffData, program = 'gt_endurance') {
+  const prog = TP_PROGRAMS.find(p => p.id === program);
+  if (!prog) return { ok: false, msg: 'Unknown program.' };
+  const current = G.teamPrincipals[program];
+  const buyout = current ? Math.floor(TP_TIERS[current.tier].hireCost * 0.25) : 0;
   const tierDef = TP_TIERS[staffData.tier];
-  if (tierDef.hireCost > 0) {
-    if (G.money < tierDef.hireCost) return { ok: false, msg: 'Not enough money.' };
-    G.money -= tierDef.hireCost;
+  if (G.money < buyout + tierDef.hireCost) return { ok: false, msg: 'Not enough money.' };
+  if (current) {
+    G.money -= buyout;
+    addNotification(`Bought out ${current.name} for $${formatNumber(buyout)}.`, 'info');
   }
-  G.teamPrincipal = { ...staffData };
-  addNotification(`Hired ${staffData.name} as Team Principal!`, 'success');
+  G.money -= tierDef.hireCost;
+  G.teamPrincipals[program] = { ...staffData };
+  addNotification(`Hired ${staffData.name} as ${prog.label} Team Principal!`, 'success');
   return { ok: true };
 }
 
-function fireTP() {
-  if (!G.teamPrincipal) return { ok: false, msg: 'No Team Principal to fire.' };
-  const name = G.teamPrincipal.name;
-  G.teamPrincipal = null;
-  addNotification(`${name} stepped down as Team Principal.`, 'info');
+function fireTP(program = 'gt_endurance') {
+  const tp = G.teamPrincipals[program];
+  if (!tp) return { ok: false, msg: 'No Team Principal to fire.' };
+  G.teamPrincipals[program] = null;
+  addNotification(`${tp.name} stepped down as Team Principal.`, 'info');
   return { ok: true };
 }
 
@@ -1433,7 +1564,9 @@ function _applyDriverTraining(driver) {
 // Everyone paid at season end: the Team Principal, race engineers and drivers
 function getPayroll() {
   const rows = [];
-  if (G.teamPrincipal) rows.push({ kind: 'tp', person: G.teamPrincipal, salary: G.teamPrincipal.salary || 0 });
+  Object.entries(G.teamPrincipals || {}).forEach(([program, tp]) => {
+    if (tp) rows.push({ kind: 'tp', program, person: tp, salary: tp.salary || 0 });
+  });
   Object.entries(G.raceEngineers || {}).forEach(([carId, re]) => rows.push({ kind: 're', carId, person: re, salary: re.salary || 0 }));
   (G.spareEngineers || []).forEach(re => rows.push({ kind: 're', carId: null, person: re, salary: re.salary || 0 }));
   G.drivers.forEach(d => rows.push({ kind: 'driver', person: d, salary: getDriverSalary(d) }));
@@ -1462,7 +1595,7 @@ function deductSeasonSalaries() {
   while (rows.length && total > Math.max(0, G.money)) {
     const r = rows.shift();
     total -= r.salary;
-    if (r.kind === 'tp') G.teamPrincipal = null;
+    if (r.kind === 'tp') G.teamPrincipals[r.program] = null;
     else if (r.kind === 're' && r.carId) delete G.raceEngineers[r.carId];
     else if (r.kind === 're') G.spareEngineers.splice(G.spareEngineers.indexOf(r.person), 1);
     else { _detachDriver(r.person); G.drivers.splice(G.drivers.indexOf(r.person), 1); }
@@ -1587,7 +1720,9 @@ function _migrateSingleSeater() {
 }
 
 function _migrateStaff() {
-  if (!G.teamPrincipal) G.teamPrincipal = null;
+  // One Team Principal became one per program: the old one runs GT & Endurance
+  if (!G.teamPrincipals) G.teamPrincipals = { gt_endurance: G.teamPrincipal || null, single_seater: null };
+  delete G.teamPrincipal;
   if (!G.raceEngineers || typeof G.raceEngineers !== 'object' || Array.isArray(G.raceEngineers)) {
     G.raceEngineers = {};
   }
@@ -1670,6 +1805,7 @@ function endSeason(endedAt = getSeasonEndTime()) {
     addNotification(`${def.name} couldn't finish before the season ended: $${formatNumber(paid)} entry fee refunded.`, 'info');
   });
   deductSeasonSalaries();
+  G.drivers.forEach(d => { d.seasonClassTier = 0; });
 
   // 3. LP was awarded per championship; collect it for the summary
   const lpByDriver = _seasonLPByDriver(endedSeason);
@@ -1835,6 +1971,7 @@ function doPrestige() {
   G.seasonStartTime = Date.now();
   G.lastSeasonSummary = null;
   G.salaryFreeSeason = G.season;
+  G.drivers.forEach(d => { d.seasonClassTier = 0; });
 
   // Cars: development tokens keep the highest-class cars, the rest are scrapped.
   // There is always at least one GT4 to restart with.
@@ -1931,9 +2068,10 @@ function advanceWorld(now) {
       entry.roundStartTime += entry.roundDurationSec * 1000;
       const r = runChampionshipRound(entry);
       const tag = `${champDef.shortName} R${entry.currentRound}/${entry.maxRounds}${r.wet ? ' (wet)' : ''}`;
-      if (r.dns)      _notify(`${tag}: did not start — no driver.`, 'error');
-      else if (r.dnf) _notify(`${tag}: DNF — mechanical failure.`, 'error');
-      else _notify(`${tag}: finished P${r.pos} · +$${formatNumber(r.prize)} · +${r.rep} REP`, r.pos <= 3 ? 'success' : 'info');
+      if (r.absentText && !r.dns) _notify(`${tag}: ${r.absentText}`, 'info');
+      if (r.dns)      _notify(`${tag}: did not start — ${r.dnsReason || 'no driver'}.`, 'error');
+      else if (r.dnf) _notify(`${tag}: DNF — ${r.dnfReason || 'mechanical failure'}.`, 'error');
+      else _notify(`${tag}: finished P${r.pos}${r.incident ? ` (${describeIncident(r.incident)})` : ''} · +$${formatNumber(r.prize)} · +${r.rep} REP`, r.pos <= 3 ? 'success' : 'info');
 
       if (entry.currentRound >= entry.maxRounds) {
         const fin = finishChampionship(entry);
@@ -2141,7 +2279,7 @@ function _migrateFeedbackRound() {
 }
 
 function _migrateDuplicateNames() {
-  const people = [...G.drivers, G.teamPrincipal, ...Object.values(G.raceEngineers || {}), ...(G.spareEngineers || [])].filter(Boolean);
+  const people = [...G.drivers, ...getTeamPrincipals(), ...Object.values(G.raceEngineers || {}), ...(G.spareEngineers || [])].filter(Boolean);
   const seen = new Set();
   people.forEach(p => {
     if (!seen.has(p.name)) { seen.add(p.name); return; }

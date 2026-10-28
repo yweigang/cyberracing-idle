@@ -114,7 +114,9 @@ test('A round produces a position, points, prize and standings', () => {
   assert(e.currentRound === 1 && e.results.length === 1, 'one round should have run');
   const r = e.lastRound;
   assert(r.dnf || (r.pos >= 1 && r.pos <= 13), 'position in range');
-  if (!r.dnf) assert(g.run('G.money') - before === r.prize && r.prize > 0, 'prize paid');
+  // Family support income keeps flowing while the round runs
+  const income = 61 * g.run('calcTotalIncomePerSec()');
+  if (!r.dnf) assert(Math.abs(g.run('G.money') - before - income - r.prize) < 1 && r.prize > 0, 'prize paid');
   const st = g.run('getStandings(G.activeChampionships[0])');
   assert(st.length === 13 && st.filter(x => x.isPlayer).length === 1, 'standings include 12 AI + player');
   assert(st.reduce((n, x) => n + x.points, 0) === 25 + 18 + 15 + 12 + 10 + 8 + 6 + 4 + 2 + 1, 'all points awarded once');
@@ -575,10 +577,10 @@ test('Saves with duplicate entry ids are repaired', () => {
 
 test('Unpaid salaries make the best-paid people leave instead of going into debt', () => {
   const { g, a, car } = setup();
-  g.run(`assignDriver('${a}', '${car}'); G.money = 30000; const s = scoutDriver('A'); G.money = 3000; G.teamPrincipal = { name: 'TP Test', salary: 10000 };`);
+  g.run(`assignDriver('${a}', '${car}'); G.money = 30000; const s = scoutDriver('A'); G.money = 3000; G.teamPrincipals.gt_endurance = { name: 'TP Test', tier: 'regional', salary: 10000 };`);
   g.run(`G.money = 3000; endSeason()`);
   assert(g.run('G.money') >= 0, 'money never negative');
-  assert(g.run('G.teamPrincipal') === null, 'TP left');
+  assert(g.run('G.teamPrincipals.gt_endurance') === null, 'TP left');
   assert(!g.run(`G.drivers.some(d => d.tier === 'A')`), 'the A driver left');
 });
 
@@ -661,6 +663,103 @@ test('The newest changelog entry matches the game version', () => {
   const src = require('fs').readFileSync(require('path').join(__dirname, '..', 'js', 'changelog.js'), 'utf8');
   const first = src.match(/version: '([\d.]+)'/)[1];
   assert(first === g.run('GAME_VERSION'), `changelog starts at ${first}, game is ${g.run('GAME_VERSION')}`);
+});
+
+test('Rival fields and rewards grow with prestige resets, up to a cap', () => {
+  const { g } = setup();
+  const strength = n => g.run(`G.prestige.prestigeCount = ${n}; getFieldStrength(getChampionshipById('gt4_regional'), 'GT4')`);
+  const prize = n => g.run(`G.prestige.prestigeCount = ${n}; getRoundPrize(getChampionshipById('gt4_regional'), 'GT4')`);
+  const base = strength(0);
+  assert(strength(1) > base, 'one reset strengthens the field');
+  assert(strength(20) === Math.round(base * g.run('FIELD_PRESTIGE_MAX')), 'field strength is capped');
+  assert(strength(20) === strength(50), 'no growth past the cap');
+  const growth = prize(4) / prize(0) - 1;
+  assert(Math.abs(growth - (g.run('getFieldMult(4)') - 1) * g.run('PRESTIGE_REWARD_SHARE')) < 1e-9, 'prizes grow at the reward share');
+});
+
+test('Every DNF has a reason and incidents never gain places', () => {
+  const { g, a, car } = setup();
+  g.run(`assignDriver('${a}', '${car}')`);
+  const bad = g.run(`(() => {
+    const def = getChampionshipById('gt4_regional');
+    const out = [];
+    for (let i = 0; i < 3000; i++) {
+      const entry = { definitionId: def.id, carId: '${car}', classId: 'GT4', field: generateField(def, 'GT4'),
+        points: 0, prizeEarned: 0, repEarned: 0, results: [], currentRound: 0, maxRounds: 10 };
+      const r = runChampionshipRound(entry);
+      if (r.dnf && !r.dnfReason) out.push('DNF without reason');
+      if (r.incident && !(r.incident.lost >= 0)) out.push('incident lost ' + r.incident.lost);
+      if (entry.resultNotes[0] !== (r.dnfReason || (r.incident && describeIncident(r.incident)) || null)) out.push('note mismatch');
+    }
+    return out;
+  })()`);
+  assert(bad.length === 0, bad.slice(0, 3).join('; '));
+});
+
+// A car of any class, straight into the garage, with a fully licensed driver from `tier`
+function carWithDriver(g, classId, tier = 'A', special = null) {
+  return g.run(`(() => {
+    const car = { id: 'car_' + G.nextCarId++, classId: '${classId}', name: '${classId} #1', upgrades: { reliability: 0 },
+      driverId: null, coDriverIds: [], championshipId: null };
+    G.cars.push(car);
+    const d = _newDriver('${tier}', SPECIAL_DRIVERS.find(s => s.id === '${special}') || null);
+    d.licenses = LICENSE_TIERS.map(lt => lt.id);
+    assignDriver(d.id, car.id);
+    return { car: car.id, driver: d.id };
+  })()`);
+}
+
+test('Driver salaries scale with the highest class raced this season', () => {
+  const { g } = setup();
+  const { car, driver } = carWithDriver(g, 'LMP2', 'A');
+  const salary = () => g.run(`getDriverSalary(G.drivers.find(d => d.id === '${driver}'))`);
+  assert(salary() === 15000 * 3, 'LMP2 seat pays x3: ' + salary());
+  g.run(`G.drivers.find(d => d.id === '${driver}').seasonClassTier = 4; unassignDriver('${driver}')`);
+  assert(salary() === 15000 * 3, 'raced LMP2 this season, still x3 after leaving the seat');
+  g.run('G.money = 1e9; endSeason()');
+  assert(salary() === 15000, 'back to base the next season');
+});
+
+test('Each program has its own Team Principal, limited by seniority', () => {
+  const { g } = setup();
+  const gt = carWithDriver(g, 'LMP3').car;
+  const f4 = carWithDriver(g, 'F4').car;
+  g.run(`G.teamPrincipals.gt_endurance = { name: 'Amy', tier: 'amateur', motivation: 50, strategy: 50, budgetManagement: 0, sponsorshipNetwork: 0, talentEye: 0, salary: 0 }`);
+  const pace = id => g.run(`getTPBonuses(G.cars.find(c => c.id === '${id}')).paceMult`);
+  assert(pace(f4) === 0, 'a GT principal does nothing for single-seaters');
+  assert(pace(gt) === 0, 'an amateur is too junior for LMP3');
+  g.run(`G.teamPrincipals.gt_endurance.tier = 'regional'`);
+  assert(pace(gt) > 0, 'a regional principal runs LMP3');
+  g.run(`hireTP({ name: 'Sam', tier: 'amateur', motivation: 40, strategy: 0, budgetManagement: 0, sponsorshipNetwork: 0, talentEye: 0, salary: 0 }, 'single_seater')`);
+  assert(pace(f4) > 0, 'the single-seater principal runs F4');
+  g.run(`G.teamPrincipal = { name: 'Old', tier: 'national' }; delete G.teamPrincipals; _migrateStaff()`);
+  assert(g.run('G.teamPrincipals.gt_endurance.name') === 'Old' && g.run('G.teamPrincipal') === undefined, 'old saves keep their principal on GT');
+});
+
+test('Special drivers: no-shows, quirk incidents and class strengths', () => {
+  const { g } = setup();
+  const robin = carWithDriver(g, 'GT4', 'A', 'robin').car;
+  const karl = carWithDriver(g, 'LMP2', 'A', 'karl');
+  const yannick = carWithDriver(g, 'GT3', 'A', 'yannick').car;
+  const rounds = carId => g.run(`(() => {
+    const car = G.cars.find(c => c.id === '${carId}');
+    const def = CHAMPIONSHIPS.find(c => c.allowedClasses.includes(car.classId));
+    const out = [];
+    for (let i = 0; i < 2000; i++) {
+      const entry = { definitionId: def.id, carId: car.id, classId: car.classId, field: generateField(def, car.classId),
+        points: 0, prizeEarned: 0, repEarned: 0, results: [], currentRound: 0, maxRounds: 10 };
+      out.push(runChampionshipRound(entry));
+    }
+    return out;
+  })()`);
+  const dns = rounds(robin).filter(r => r.dns && /did not show up/.test(r.dnsReason)).length / 2000;
+  assert(dns > 0.45 && dns < 0.55, 'Robin skips about half the rounds: ' + dns);
+  const quali = rounds(yannick).filter(r => r.incident && r.incident.type === 'special' && /qualifying/.test(r.incident.text)).length;
+  assert(quali > 300, 'Yannick chokes qualifying often: ' + quali);
+  const boost = g.run(`(() => { const d = G.drivers.find(x => x.id === '${karl.driver}');
+    return calcDriverSkillInCar(d, { classId: 'LMP2' }, 'sprint', false) / calcDriverSkillInCar(d, { classId: 'GT3' }, 'sprint', false); })()`);
+  assert(Math.abs(boost - 1.2) < 1e-9, 'Karl is 20% stronger in LMP2');
+  assert(g.run(`_newDriver('C', SPECIAL_DRIVERS[0]).name`) === 'Robin', 'special drivers keep their name');
 });
 
 // The harness only runs data.js and game.js; a syntax error in any other file still breaks the game
