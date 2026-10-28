@@ -696,6 +696,30 @@ test('Every DNF has a reason and incidents never gain places', () => {
   assert(bad.length === 0, bad.slice(0, 3).join('; '));
 });
 
+test('REP resets with prestige; Fan Base keeps 1% per purchase', () => {
+  const { g } = setup();
+  g.run('G.reputation = 60000; G.prestige.lastPrestigeAt = 0; doPrestige()');
+  assert(g.run('G.reputation') === 0, 'REP back to zero');
+  g.run(`G.prestigePoints = 1000; for (let i = 0; i < 12; i++) buyPrestigeItem('fan_base')`);
+  assert(g.run(`getPrestigeItemCount('fan_base')`) === 10, 'Fan Base caps at 10 purchases');
+  g.run('G.reputation = 50000; doPrestige()');
+  assert(g.run('G.reputation') === 5000, 'keeps 10%: ' + g.run('G.reputation'));
+  g.run('G.reputation += 3000');
+  assert(g.run('Math.max(0, G.reputation - G.prestige.repAtLastPrestige)') === 3000, 'only REP earned after the reset counts toward PP');
+});
+
+test('Fame tiers lift sponsors and cut salaries and scouting', () => {
+  const { g } = setup();
+  const { driver } = carWithDriver(g, 'GT4', 'A');
+  const at = rep => g.run(`G.reputation = ${rep}; ({ tier: getFameTier().label, sponsor: _sponsorMult(),
+    salary: getDriverSalary(G.drivers.find(d => d.id === '${driver}')), scout: getScoutCost('A') })`);
+  const none = at(24999), known = at(25000), legend = at(300000);
+  assert(none.tier === 'Unknown' && known.tier === 'Known' && legend.tier === 'Legendary', 'tiers by REP');
+  assert(Math.abs(known.sponsor - none.sponsor - 0.10) < 1e-9, 'Known: +10% sponsors');
+  assert(legend.salary === Math.round(none.salary * 0.8), 'Legendary: -20% salaries');
+  assert(legend.scout === Math.floor(none.scout * 0.75), 'Legendary: -25% scouting');
+});
+
 // A car of any class, straight into the garage, with a fully licensed driver from `tier`
 function carWithDriver(g, classId, tier = 'A', special = null) {
   return g.run(`(() => {
@@ -760,6 +784,20 @@ test('Special drivers: no-shows, quirk incidents and class strengths', () => {
     return calcDriverSkillInCar(d, { classId: 'LMP2' }, 'sprint', false) / calcDriverSkillInCar(d, { classId: 'GT3' }, 'sprint', false); })()`);
   assert(Math.abs(boost - 1.2) < 1e-9, 'Karl is 20% stronger in LMP2');
   assert(g.run(`_newDriver('C', SPECIAL_DRIVERS[0]).name`) === 'Robin', 'special drivers keep their name');
+});
+
+test('Special drivers are never duplicated, rarer in cheap scouts and never the starting driver', () => {
+  const { g } = setup();
+  assert(g.run(`Object.keys(SPECIAL_DRIVER_CHANCES).every((t, i, ts) => i === 0 || SPECIAL_DRIVER_CHANCES[t] > SPECIAL_DRIVER_CHANCES[ts[i - 1]])`),
+    'chances rise from Club Racer to Legend');
+  g.run('SPECIAL_DRIVER_CHANCES.C = 1');
+  const names = g.run(`Array.from({ length: SPECIAL_DRIVERS.length }, () => (G.nextFreeScoutAt = 0, scoutDriver('C')).driver.name)`);
+  assert(new Set(names).size === names.length, 'each special at most once: ' + names.join(', '));
+  assert(!g.run(`(G.nextFreeScoutAt = 0, scoutDriver('C')).driver.special`), 'all specials signed: a normal driver');
+  g.run(`G.drivers = G.drivers.filter(d => d.special !== 'robin')`);
+  assert(g.run(`(G.nextFreeScoutAt = 0, scoutDriver('C')).driver.name`) === 'Robin', 'Robin can return after leaving');
+  g.run(`G.drivers = []; G.cars.forEach(c => { c.driverId = null; c.coDriverIds = []; }); _setupNewGame()`);
+  assert(!g.run('G.drivers.some(d => d.special)'), 'the starting driver is never special');
 });
 
 // The harness only runs data.js and game.js; a syntax error in any other file still breaks the game

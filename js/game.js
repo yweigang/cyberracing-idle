@@ -228,7 +228,7 @@ function calcDNFChance(car, format = 'sprint', lineupSize = 1, absent = 0) {
 // Car income formula is retained only for championship payout bonus calculations.
 function _sponsorMult() {
   const prestigeBonus = (G.prestige && G.prestige.permanentBonuses && G.prestige.permanentBonuses.sponsorBonus) || 0;
-  return 1 + prestigeBonus + getTPBonuses().sponsorMult + getHQLevel('hospitality') * 0.05;
+  return 1 + prestigeBonus + getTPBonuses().sponsorMult + getHQLevel('hospitality') * 0.05 + getFameTier().sponsor;
 }
 
 // Share of a sponsor's income paid straight away (targeted sponsors hold the rest back)
@@ -948,15 +948,26 @@ function getDriverSalaryClassTier(driver) {
 function getDriverSalary(driver) {
   const tierDef = DRIVER_TIERS[driver.tier];
   const base = tierDef ? tierDef.salary || 0 : 0;
-  return Math.round(base * (SALARY_CLASS_MULT[getDriverSalaryClassTier(driver)] || 1));
+  return Math.round(base * (SALARY_CLASS_MULT[getDriverSalaryClassTier(driver)] || 1) * (1 - getFameTier().salary));
 }
 
-function scoutDriver(tier) {
+// The team's fame tier for its current REP
+function getFameTier(rep = G.reputation) {
+  return FAME_TIERS.filter(t => rep >= t.rep).pop();
+}
+
+// What a scout of this tier costs after the Team Principal, fame and Talent Academy
+function getScoutCost(tier) {
+  const discount = G.prestige.permanentBonuses.scoutDiscount || 0;
+  return Math.floor(DRIVER_TIERS[tier].scoutCost * getTPBonuses().scoutCostMult * (1 - getFameTier().scout) * (1 - discount));
+}
+
+// allowSpecial: false for drivers the game hands out, like the first one of a new game
+function scoutDriver(tier, allowSpecial = true) {
   const tierDef = DRIVER_TIERS[tier];
   if (!tierDef) return { ok: false, msg: 'Unknown tier.' };
   if (tierDef.locked && !_allowLockedScout) return { ok: false, msg: 'Special acquisition only.' };
-  const discount = G.prestige.permanentBonuses.scoutDiscount || 0;
-  const effectiveScoutCost = Math.floor(tierDef.scoutCost * getTPBonuses().scoutCostMult * (1 - discount));
+  const effectiveScoutCost = getScoutCost(tier);
   if (G.money < effectiveScoutCost) return { ok: false, msg: 'Not enough money.' };
   const freeScout = tier === 'C';
   if (freeScout && getFreeScoutWait() > 0) return { ok: false, msg: `Next free scout in ${Math.ceil(getFreeScoutWait())}s.` };
@@ -964,15 +975,15 @@ function scoutDriver(tier) {
   G.money -= effectiveScoutCost;
   if (freeScout) G.nextFreeScoutAt = Date.now() + FREE_SCOUT_COOLDOWN_SEC * 1000;
 
-  const driver = _newDriver(tier, _rollSpecialDriver());
+  const driver = _newDriver(tier, allowSpecial ? _rollSpecialDriver(tier) : null);
   const special = getSpecialDef(driver);
   if (special) addNotification(`A special driver joined: ${driver.name}! ${special.quirk}`, 'prestige');
   return { ok: true, driver };
 }
 
-// A special driver nobody on the team is yet, at SPECIAL_DRIVER_CHANCE, or null
-function _rollSpecialDriver() {
-  if (Math.random() >= SPECIAL_DRIVER_CHANCE) return null;
+// A special driver nobody on the team is yet, at the tier's chance, or null
+function _rollSpecialDriver(tier) {
+  if (Math.random() >= (SPECIAL_DRIVER_CHANCES[tier] || 0)) return null;
   const free = SPECIAL_DRIVERS.filter(s => !G.drivers.some(d => d.special === s.id));
   return free.length ? _pick(free) : null;
 }
@@ -1901,6 +1912,11 @@ function calcPrestigePoints() {
   return Math.floor(pp + repGained / PRESTIGE_REP_PER_PP) + getHQPrestigePoints() + (G.prestige.sponsorPP || 0);
 }
 
+// Share of REP kept through a reset
+function getFanBaseShare() {
+  return getPrestigeItemCount('fan_base') * FAN_BASE_REP_SHARE;
+}
+
 // Money the team restarts with after a prestige reset
 function getPrestigeStartMoney() {
   return PRESTIGE_START_MONEY + getPrestigeItemCount('seed_money') * SEED_MONEY_PER_PURCHASE;
@@ -1953,6 +1969,8 @@ function doPrestige() {
   G.prestigePoints += ppGain;
   G.prestige.lastPrestigeSeason = G.season;
   G.prestige.lastPrestigeAt = Date.now();
+  // REP resets too; each Fan Base purchase keeps 1% of it
+  G.reputation = Math.floor(G.reputation * getFanBaseShare());
   G.prestige.repAtLastPrestige = G.reputation;
   G.prestige.sponsorPP = 0;
   const prevPrestigeCount = G.prestige.prestigeCount || 0;
@@ -2299,7 +2317,7 @@ function resetGame() {
 }
 
 function _setupNewGame() {
-  const res = scoutDriver('C');
+  const res = scoutDriver('C', false);
   if (res.ok) assignDriver(res.driver.id, G.cars[0].id);
   G.nextFreeScoutAt = 0;
   G.lastSeenVersion = GAME_VERSION;

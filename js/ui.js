@@ -188,11 +188,24 @@ function startTeamRename() {
   input.addEventListener('blur', () => finish(true));
 }
 
+// " (+20% sponsors, -10% driver salaries)" for a fame tier, or "" for none
+function _famePerks(t) {
+  const perks = [t.sponsor && `+${t.sponsor * 100}% sponsors`, t.salary && `-${t.salary * 100}% driver salaries`,
+    t.scout && `-${t.scout * 100}% scouting`].filter(Boolean);
+  return perks.length ? ` (${perks.join(', ')})` : '';
+}
+
 function updateCurrencyBar() {
   const teamEl = document.getElementById('hud-team');
   if (teamEl) teamEl.textContent = G.teamName || DEFAULT_TEAM_NAME;
   document.getElementById('hud-money').textContent = '$' + formatNumber(G.money);
-  document.getElementById('hud-rep').textContent = formatNumber(G.reputation) + ' REP';
+  const fame = getFameTier();
+  const nextFame = FAME_TIERS.find(t => t.rep > G.reputation);
+  const repEl = document.getElementById('hud-rep');
+  repEl.textContent = `${formatNumber(G.reputation)} REP · ${fame.label}`;
+  repEl.title = `Fame: ${fame.label}${_famePerks(fame)}`
+    + (nextFame ? `\nNext: ${nextFame.label} at ${formatNumber(nextFame.rep)} REP${_famePerks(nextFame)}` : '')
+    + '\nREP and fame reset with prestige.';
   _updateSalaryHud();
   const ppNext = calcPrestigePoints();
   const hudPP = document.getElementById('hud-pp');
@@ -295,6 +308,9 @@ function _renderSeatLicenses(driver, carLicense) {
   }).join('');
 }
 
+// A driver's name, with ✦ for special drivers
+const _driverLabel = d => (getSpecialDef(d) ? '✦ ' : '') + d.name;
+
 // Seat rows for a car card: lead, co-drivers, and empty seats with a driver picker
 function _renderLineup(car) {
   const lineup = getCarLineup(car);
@@ -310,10 +326,13 @@ function _renderLineup(car) {
     const role = i === 0 ? 'Lead' : i < raceSeats ? 'Co-driver' : 'Reserve';
     if (d) {
       const s = getCareerStage(d.age || 20);
+      const special = getSpecialDef(d);
+      const boost = special && special.classBoost && special.classBoost.classes.includes(car.classId) ? special.classBoost : null;
       html += `
         <div class="lineup-seat ${i >= raceSeats ? 'lineup-reserve' : ''}">
           <span class="lineup-role">${role}</span>
-          <span class="lineup-name">${d.name}</span>
+          <span class="lineup-name ${special ? 'lineup-special' : ''}" ${special ? `title="${special.quirk}"` : ''}>${_driverLabel(d)}</span>
+          ${boost ? `<span class="lineup-special-boost">+${Math.round((boost.mult - 1) * 100)}% in ${getCarClassById(car.classId).name}</span>` : ''}
           <span class="lineup-stats">Pace ${d.pace} · Fit ${d.fitness} · <span style="color:${s.color}">${s.label}</span></span>
           <span class="lineup-licenses">${_renderSeatLicenses(d, license)}</span>
           ${i > 0 ? `<button class="btn lineup-btn lineup-lead-btn" data-car="${car.id}" data-driver="${d.id}" title="Make lead driver">▲ Lead</button>` : ''}
@@ -323,7 +342,7 @@ function _renderLineup(car) {
       const options = candidates.map(c => {
         const from = c.carId ? G.cars.find(x => x.id === c.carId) : null;
         const top = _topLicenses(c).map(lt => lt.name).join('/');
-        return `<option value="${c.id}">${c.name} · Pace ${c.pace}${top ? ' · ' + top : ''}${from ? ' (from ' + from.name + ')' : ''}</option>`;
+        return `<option value="${c.id}">${_driverLabel(c)} · Pace ${c.pace}${top ? ' · ' + top : ''}${from ? ' (from ' + from.name + ')' : ''}</option>`;
       }).join('');
       html += `
         <div class="lineup-seat lineup-empty ${i >= raceSeats ? 'lineup-reserve' : ''}">
@@ -975,7 +994,8 @@ function renderDrivers() {
     const cfg = DRIVER_STAT_CONFIG[tier];
     const isLocked = def.locked;
     const scoutWait = tier === 'C' ? getFreeScoutWait() : 0;
-    const canAfford = !isLocked && G.money >= def.scoutCost && scoutWait === 0;
+    const scoutCost = isLocked ? def.scoutCost : getScoutCost(tier);
+    const canAfford = !isLocked && G.money >= scoutCost && scoutWait === 0;
 
     const budgetLabel = `Budget: ${cfg.budgetMin}–${cfg.budgetMax} pts`;
     const lockTooltip = isLocked ? 'title="Unlocked via Prestige milestones"' : '';
@@ -994,7 +1014,7 @@ function renderDrivers() {
           ? `<div class="scout-locked-msg">Unlocked via Prestige</div>`
           : `<button class="btn scout-btn ${canAfford ? '' : 'disabled'}"
                data-tier="${tier}" ${canAfford ? '' : 'disabled'}>
-               ${def.scoutCost === 0 ? (scoutWait > 0 ? `Free in ${Math.ceil(scoutWait)}s` : 'Free Scout') : '$' + formatNumber(def.scoutCost)}
+               ${scoutCost === 0 ? (scoutWait > 0 ? `Free in ${Math.ceil(scoutWait)}s` : 'Free Scout') : '$' + formatNumber(scoutCost)}
              </button>`
         }
       </div>`;
@@ -1031,9 +1051,9 @@ function renderDrivers() {
       const primaryLabel = DRIVER_STAT_LABELS[driver.primaryStat] || driver.primaryStat;
 
       rosterHtml += `
-        <div class="driver-card ${age >= 38 ? 'driver-retiring' : ''}">
+        <div class="driver-card ${age >= 38 ? 'driver-retiring' : ''} ${getSpecialDef(driver) ? 'driver-special' : ''}">
           <div class="driver-info">
-            <div class="driver-name">${driver.name}</div>
+            <div class="driver-name">${_driverLabel(driver)}</div>
             <div class="driver-tier" style="color: ${tierDef.color}">${tierDef.name}</div>
             <div class="driver-primary-badge" style="color: ${tierDef.color}">★ ${primaryLabel}</div>
             ${getSpecialDef(driver) ? `<div class="driver-special-badge">✦ Special · ${getSpecialDef(driver).quirk}</div>` : ''}
@@ -1841,8 +1861,9 @@ function renderPrestige() {
   const ppGain = calcPrestigePoints();
   const canP = canPrestige();
   const resets = G.prestige.prestigeCount || 0;
-  const fieldPct = r => Math.round((getFieldMult(r) - 1) * 100);
-  const rewardPct = r => Math.round((getFieldMult(r) - 1) * PRESTIGE_REWARD_SHARE * 100);
+  const pct = x => +(x * 100).toFixed(1);   // 22.5, 15 (no trailing .0)
+  const fieldPct = r => pct(getFieldMult(r) - 1);
+  const rewardPct = r => pct((getFieldMult(r) - 1) * PRESTIGE_REWARD_SHARE);
   const fieldNote = getFieldMult(resets + 1) > getFieldMult(resets)
     ? `Rival fields are +${fieldPct(resets)}% stronger than in your first run; after this reset +${fieldPct(resets + 1)}%, with prizes and REP +${rewardPct(resets + 1)}%.`
     : `Rival fields are at their strongest: +${fieldPct(resets)}%, with prizes and REP +${rewardPct(resets)}%.`;
@@ -1852,7 +1873,7 @@ function renderPrestige() {
       <div class="prestige-pp">You have <span class="pp-value">${G.prestigePoints} PP</span></div>
       <div class="prestige-gain">Resetting now grants <span class="pp-gain">+${ppGain} PP</span>
         <span class="prestige-warning">(titles and podiums since the last reset, 1 PP per ${formatNumber(PRESTIGE_REP_PER_PP)} REP gained, ${HQ_PP_PER_LEVEL} PP per HQ level, sponsor PP bonuses)</span></div>
-      <div class="prestige-warning">Starts the team over: $${formatNumber(getPrestigeStartMoney())}, one stock GT4 (plus a car per Development Token), no sponsors, HQ rebuilt. Drivers, licenses, REP, garage, staff and PP stay. The team starts again at season 1, with no salaries due.
+      <div class="prestige-warning">Starts the team over: $${formatNumber(getPrestigeStartMoney())}, one stock GT4 (plus a car per Development Token), no sponsors, HQ rebuilt. REP resets to ${getFanBaseShare() ? Math.round(getFanBaseShare() * 100) + '% (Fan Base)' : 'zero'}, so classes, series and fame must be earned again. Drivers, licenses, garage, staff and PP stay. The team starts again at season 1, with no salaries due.
         <br>${fieldNote}
         ${_prestigeBuyWarning(ppGain)}
         ${(G.prestige.prestigeCount || 0) === 0 ? '<br>Your first reset unlocks the <b>Single-Seater Pathway</b> (F4 → F1).' : ''}</div>

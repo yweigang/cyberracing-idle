@@ -1,5 +1,5 @@
 // Game release shown in the header; keep in step with js/changelog.js
-const GAME_VERSION = '0.6.0';
+const GAME_VERSION = '0.7.0';
 
 'use strict';
 
@@ -473,7 +473,7 @@ const FIELD_SPREAD = 0.36;      // AI ratings span fieldStrength × (1 ± spread
 // Rival fields get stronger with each prestige reset, since drivers and the Performance
 // Programme carry over. The cap keeps a fully developed team clearly ahead.
 const FIELD_PRESTIGE_STEP = 0.15;   // field strength added per reset
-const FIELD_PRESTIGE_MAX = 1.6;     // strongest field multiplier
+const FIELD_PRESTIGE_MAX = 1.5;     // strongest field multiplier
 const PRESTIGE_REWARD_SHARE = 0.5;  // prizes and REP grow by this share of the field's growth
 const RACE_NOISE = 0.07;        // per-round performance variance (std dev, before consistency)
 
@@ -530,10 +530,11 @@ const FREE_SCOUT_COOLDOWN_SEC = 90;
 // or sits in during the season sets the multiplier on their tier's base salary.
 const SALARY_CLASS_MULT = { 1: 1, 2: 1.5, 3: 2, 4: 3, 5: 4, 6: 5 };
 
-// Rare named drivers with a quirk, found when scouting at any tier. paceBonus is added to
-// their pace. noShow: chance to skip a round; incident: chance of a place-losing incident
-// while racing; classBoost: skill multiplier in some classes.
-const SPECIAL_DRIVER_CHANCE = 0.0001;   // per scout
+// Rare named drivers with a quirk, found when scouting (and through the Legend Contract,
+// tier L). paceBonus is added to their pace. noShow: chance to skip a round; incident:
+// chance of a place-losing incident while racing; classBoost: skill multiplier in some classes.
+// Chance per scout by tier; only specials not on the team can turn up.
+const SPECIAL_DRIVER_CHANCES = { C: 0.00001, B: 0.00002, A: 0.00005, S: 0.0001, L: 0.001 };
 const SPECIAL_DRIVERS = [
   { id: 'robin', name: 'Robin', quirk: 'Very fast, but only shows up for about half the races.', paceBonus: 15,
     noShow: { chance: 0.5, line: 'But next time I will drive!' } },
@@ -666,6 +667,13 @@ const PRESTIGE_ITEMS = [
     maxPurchases: 5,
   },
   {
+    id: 'fan_base',
+    name: 'Fan Base',
+    cost: 25,
+    description: 'Keep 1% of your REP through every reset (per purchase).',
+    maxPurchases: 10,
+  },
+  {
     id: 'legend_contract',
     name: 'Legend Contract',
     cost: 500,
@@ -680,6 +688,17 @@ const PRESTIGE_TITLE_PP = {
 };
 const PRESTIGE_PODIUM_SHARE = 0.4;
 const PRESTIGE_REP_PER_PP = 1000;   // REP gained since the last reset per PP
+const FAN_BASE_REP_SHARE = 0.01;    // REP kept through a reset per Fan Base purchase
+
+// Fame: REP reached in the current run lifts sponsor income and lowers driver salaries
+// and scouting costs. REP resets with prestige, so every run climbs these again.
+const FAME_TIERS = [
+  { rep: 0,      label: 'Unknown',   sponsor: 0,    salary: 0,    scout: 0    },
+  { rep: 25000,  label: 'Known',     sponsor: 0.10, salary: 0,    scout: 0    },
+  { rep: 75000,  label: 'Famous',    sponsor: 0.20, salary: 0.10, scout: 0    },
+  { rep: 150000, label: 'Star Team', sponsor: 0.30, salary: 0.15, scout: 0.15 },
+  { rep: 300000, label: 'Legendary', sponsor: 0.40, salary: 0.20, scout: 0.25 },
+];
 const PRESTIGE_MIN_GAIN = 20;       // smallest PP gain that allows a reset
 const PRESTIGE_START_MONEY = 5000;  // money after a reset, before Investor Backing
 const SEED_MONEY_PER_PURCHASE = 25000;

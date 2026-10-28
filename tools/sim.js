@@ -152,7 +152,7 @@ var BOT = {
         const race = getCarLineup(car).slice(0, series ? getLineupSize(series) : 1);
         const weakest = race.sort((a, b) => calcDriverSkill(a, 'sprint') - calcDriverSkill(b, 'sprint'))[0];
         if (want && weakest && TIER_RANK[weakest.tier] < TIER_RANK[want] && (TIER_STARTING_LICENSES[want] || []).includes(lic)) {
-          const cost = Math.floor(DRIVER_TIERS[want].scoutCost * getTPBonuses().scoutCostMult * (1 - (G.prestige.permanentBonuses.scoutDiscount || 0))) || 1;
+          const cost = getScoutCost(want) || 1;
           consider(cost * 1.5, 20 * base * def / race.length, () => {
             const wasLead = car.driverId === weakest.id;
             const r = scoutDriver(want);
@@ -170,6 +170,22 @@ var BOT = {
       }
       if (!best || G.money - best.cost < reserve) break;
       best.buy();
+    }
+    // GT & Endurance Team Principal: the most junior tier that can run the team's best car
+    const tpTiers = Object.keys(TP_TIERS).filter(t => !TP_TIERS[t].locked);
+    const wantTP = tpTiers.find(t => TP_TIERS[t].maxClassTier >= maxTier);
+    const curTP = G.teamPrincipals.gt_endurance;
+    if (wantTP && (!curTP || tpTiers.indexOf(curTP.tier) < tpTiers.indexOf(wantTP))) {
+      const buyout = curTP ? Math.floor(TP_TIERS[curTP.tier].hireCost * 0.25) : 0;
+      if (G.money - buyout - TP_TIERS[wantTP].hireCost - TP_TIERS[wantTP].salary >= reserve) {
+        hireTP(generateTPOptions().find(o => o.tier === wantTP), 'gt_endurance');
+      }
+    }
+    // Spare PP once the shop items are maxed: a Legend for the current season
+    if (G.prestigePoints >= PRESTIGE_ITEMS.find(i => i.id === 'legend_contract').cost
+      && ['wind_tunnel', 'head_start', 'dev_token'].every(id => getPrestigeItemCount(id) >= PRESTIGE_ITEMS.find(i => i.id === id).maxPurchases)
+      && !G.drivers.some(d => d.tier === 'L')) {
+      buyPrestigeItem('legend_contract');
     }
     // Surplus beyond the reserve goes into the cheapest HQ facility
     if (isHQUnlocked()) {
@@ -228,4 +244,6 @@ for (let s = 1; s <= HOURS * 3600; s++) {
 }
 console.log('FINAL', JSON.stringify(g.run(`({ money: Math.round(G.money), rep: G.reputation, season: G.season, pp: G.prestigePoints,
   cars: G.cars.map(c => c.classId + ' ' + Object.values(c.upgrades).join('/')),
-  sponsors: G.sponsors.filter(Boolean).map(s => s.tier + ':' + s.incomePerSec) })`)));
+  sponsors: G.sponsors.filter(Boolean).map(s => s.tier + ':' + s.incomePerSec),
+  principal: G.teamPrincipals.gt_endurance && G.teamPrincipals.gt_endurance.tier,
+  legendContracts: getPrestigeItemCount('legend_contract') })`)));

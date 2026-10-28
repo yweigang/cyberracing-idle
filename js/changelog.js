@@ -4,6 +4,21 @@
 
 const CHANGELOG = [
   {
+    version: '0.7.0',
+    date: '2026-10-28',
+    title: 'Fame and a fresh start',
+    changes: [
+      'Reputation now resets with every prestige, so car classes, series, garage levels, the HQ and sponsor slots have to be earned again in each run.',
+      'New prestige shop item, Fan Base: keeps 1% of your REP through every reset, per purchase, up to 10%.',
+      'New Fame tiers lift sponsor income and cut driver salaries and scouting costs as your REP grows during a run: Known (25K REP), Famous (75K), Star Team (150K) and Legendary (300K). Your current tier is shown next to REP at the top, with its perks when you hover over it. Fame resets with REP.',
+      'Rival fields now top out at +50% after resets (was +60%), with prizes and REP at up to +25%.',
+      'Special drivers stand out: a glowing card on the Drivers page and a \u2726 by their name in lineups and driver lists. Drivers with a class strength show their bonus in the garage.',
+      'Pricier scouts find special drivers more often.',
+      'The scout buttons show the real price after Team Principal, fame and Talent Academy discounts.',
+      'The Prestige panel shows half percentages (e.g. +22.5%) instead of rounding them.',
+    ],
+  },
+  {
     version: '0.6.0',
     date: '2026-10-28',
     title: 'Team Principals per program, special drivers',
