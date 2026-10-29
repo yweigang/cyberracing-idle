@@ -4,6 +4,20 @@
 
 const CHANGELOG = [
   {
+    version: '0.8.0',
+    date: '2026-10-29',
+    title: 'Longer careers, real resets',
+    changes: [
+      'Drivers now age one year every 6 seasons instead of every season, so careers last days instead of hours and a night away costs about a year. Hover a driver\'s age to see when their next birthday is.',
+      'A prestige reset now starts the team over: all drivers, team principals and race engineers leave, a free rookie drives the GT4, and the garage is rebuilt at the size your kept cars need. Championship history stays. The first season after a reset now pays salaries like any other.',
+      'Formula World now unlocks once you have earned 500 PP in total. Spending PP in the prestige shop no longer locks it again.',
+      'The welcome-back message now shows what salaries and entry fees cost while you were away, and how much your money changed overall.',
+      'The F2 Global Series now has 15 rounds, so a car that enters at the start of a season can race it twice.',
+      'Sponsor offers now show what is paid right away and what is held back, bonuses included. Signed sponsors show whether their held-back money will be paid at season end or lost.',
+      'Every page now updates while you are on it: buttons turn on as soon as you can afford them or have the REP, and season ends, retirements, staff changes and newly opened series show up without switching tabs.',
+    ],
+  },
+  {
     version: '0.7.3',
     date: '2026-10-28',
     title: 'Licenses in order',
