@@ -184,6 +184,19 @@ test('Offline progress replays seasons and auto-renewals', () => {
   assert(g.run('G.completedChampionships.length') >= 20, 'auto-renewed championships while offline');
 });
 
+test('Offline summary shows salaries and fees, and the net change in money', () => {
+  const { g, a, car } = setup();
+  g.run(`assignDriver('${a}', '${car}'); enterChampionship('gt4_regional', '${car}'); G.lastSave = Date.now();`);
+  const before = g.run('G.money');
+  g.advance(3 * 3600e3);
+  g.run('applyOfflineProgress()');
+  const net = g.run('G.money') - before;
+  assert(g.run('_offlineNet') === net, 'net is the change in money');
+  assert(g.run('_offlineEarned') > net, 'salaries and fees were paid');
+  const msg = g.run('getOfflineSummary(3 * 3600)');
+  assert(msg.includes('in salaries and fees: net ' + (net < 0 ? '-' : '+') + '$'), msg);
+});
+
 test('Two GT4 Cup titles earn the GT3 license', () => {
   const { g, a, car } = setup();
   g.run(`assignDriver('${a}', '${car}'); G.pitCrew.level = 20; G.drivers.forEach(d => DRIVER_STAT_KEYS.forEach(k => d[k] = 90));`);

@@ -2173,6 +2173,7 @@ function applyOfflineProgress() {
   if (elapsed < 5) return;
 
   const earnedBefore = G.totalEarned;
+  const moneyBefore = G.money;
 
   // Time beyond the offline cap is frozen: shift all clocks forward by it
   const frozenMs = Math.max(0, now - G.lastSave - elapsed * 1000);
@@ -2202,6 +2203,7 @@ function applyOfflineProgress() {
   if (seasons > 0) parts.push(`${seasons} season${seasons > 1 ? 's' : ''} completed`);
   if (parts.length) addNotification(`While you were away: ${parts.join(', ')}.`, 'info');
   _offlineEarned = G.totalEarned - earnedBefore;
+  _offlineNet = G.money - moneyBefore;
 
   return elapsed;
 }
@@ -2376,6 +2378,17 @@ function formatTime(sec) {
 let _lastTick = 0;
 let _lastSaveTime = 0;
 let _offlineEarned = 0;
+let _offlineNet = 0;
+
+// Gross income alone hid what salaries and entry fees took while away, so the
+// summary shows both and the net change in money
+function getOfflineSummary(elapsed) {
+  const spent = _offlineEarned - _offlineNet;
+  const sign = _offlineNet < 0 ? '-' : '+';
+  let msg = `Welcome back! Your cars raced for ${formatTime(elapsed)}. Earned $${formatNumber(_offlineEarned)}`;
+  if (spent > 0) msg += `, paid $${formatNumber(spent)} in salaries and fees: net ${sign}$${formatNumber(Math.abs(_offlineNet))}`;
+  return msg + '.';
+}
 
 function initGame() {
   const loaded = loadGame();
@@ -2385,7 +2398,7 @@ function initGame() {
   } else {
     const elapsed = applyOfflineProgress();
     if (elapsed > 5) {
-      addNotification(`Welcome back! Your cars raced for ${formatTime(elapsed)}. +$${formatNumber(_offlineEarned)} earned offline.`, 'offline');
+      addNotification(getOfflineSummary(elapsed), 'offline');
     }
   }
   _lastTick = performance.now();
