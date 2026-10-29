@@ -1188,6 +1188,7 @@ function renderDrivers() {
 
 function renderSponsors() {
   const container = document.getElementById('panel-sponsors');
+  _sponsorRenderSig = _sponsorSig();
   const totalIps      = calcSponsorIncomePerSec();
   const slotsUnlocked = getSponsorSlotsUnlocked();
 
@@ -1471,8 +1472,18 @@ function renderSponsorTargetText(target) {
 
 // ─── Targeted in-place sponsor updates ───────────────────────────────────────
 
+// Changes when the page needs a full redraw: a new season, a slot unlocking, contracts
+// ticking down or ending, offers taken, or the sponsor bonus moving
+let _sponsorRenderSig = '';
+function _sponsorSig() {
+  return [G.season, getSponsorSlotsUnlocked(), Math.round(_sponsorMult() * 100), getFamilySupportPerSec(),
+    G.sponsors.map(s => s ? s.id + ':' + s.seasonsRemaining : '-').join('|'),
+    getSponsorOffers().map(o => o.id).join('|')].join('#');
+}
+
 function updateSponsorsLive() {
   if (_activeTab !== 'sponsors') return;
+  if (_sponsorSig() !== _sponsorRenderSig) { renderSponsors(); return; }
 
   const totalEl = document.getElementById('sponsor-total-ips');
   if (totalEl) totalEl.textContent = '$' + formatNumber(calcSponsorIncomePerSec()) + '/s';
