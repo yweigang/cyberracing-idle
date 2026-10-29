@@ -31,6 +31,7 @@ function switchTab(tabId) {
 }
 
 function renderActivePanel() {
+  _pageRenderSig = _pageSig();
   switch (_activeTab) {
     case 'garage':        renderGarage(); break;
     case 'championships': renderChampionships(); break;
@@ -2103,10 +2104,51 @@ function updateHQLive() {
 
 // ─── Fast UI Refresh (HUD only — no DOM reconstruction) ─────────────────────
 
+// ─── Page redraws when what a page shows changes ─────────────────────────────
+
+// Per page: a fingerprint of everything that changes its layout or which buttons
+// are enabled (affordability, REP and PP unlocks, the season, roster, staff). Timers,
+// bars and money-only buttons that update in place are left out. Sponsors has its own.
+const _yes = ok => (ok ? '1' : '0');
+const PAGE_SIGS = {
+  garage: () => [G.season, G.garageLevel, G.pitCrew.level, G.pitCrew.size, isSingleSeaterUnlocked(),
+    CAR_CLASSES.map(c => _yes(G.reputation >= c.repRequired && meetsPPRequirement(c))).join(''),
+    G.cars.map(c => [c.id, c.driverId, (c.coDriverIds || []).join(','), c.championshipId, c.upgrades.reliability, c.setupChamps].join(':')).join('|'),
+    G.drivers.map(d => d.id + ':' + d.age).join('|')],
+  championships: () => [G.season, isSingleSeaterUnlocked(),
+    G.activeChampionships.map(e => e.id + ':' + e.currentRound).join('|'),
+    (G.registrations || []).map(r => r.id).join('|'),
+    CHAMPIONSHIPS.map(c => _yes(G.reputation >= (c.repRequired || 0)) + _yes(checkChampionshipPrerequisite(c)) + _yes(fitsInSeason(c))).join(''),
+    G.cars.map(car => car.id + ':' + car.driverId + ':' + CHAMPIONSHIPS.map(c =>
+      _yes(c.allowedClasses.includes(car.classId) && G.money >= getEntryFee(c, car))).join('')).join('|')],
+  drivers: () => [G.season, G.cars.map(c => c.id + ':' + c.classId).join('|'),
+    ['B', 'A', 'S'].map(t => _yes(G.money >= getScoutCost(t))).join(''),
+    G.drivers.map(d => [d.id, d.age, d.carId, (d.licenses || []).length, DRIVER_STAT_KEYS.map(k => d[k]).join(',')].join(':')).join('|')],
+  staff: () => [G.season, getSeasonSalaryTotal(), G.cars.map(c => c.id).join('|'),
+    getPayroll().map(r => r.kind + ':' + r.person.name).join('|')],
+  hq: () => [_yes(G.reputation >= HQ_UNLOCK_REP), Object.values(G.hq).join(',')],
+  prestige: () => [G.season, _yes(canPrestige()), calcPrestigePoints(), G.prestigePoints, G.prestige.purchased.length],
+};
+let _pageRenderSig = '';
+function _pageSig() {
+  const sig = PAGE_SIGS[_activeTab];
+  return sig ? _activeTab + '#' + sig().join('#') : '';
+}
+
+// Redraws the active page when its fingerprint changed, but not while the player is
+// using a dropdown or text field on it (a redraw would close or clear it)
+function updatePageLive() {
+  if (!PAGE_SIGS[_activeTab] || _pageSig() === _pageRenderSig) return;
+  const el = document.activeElement;
+  if (el && ['SELECT', 'INPUT', 'TEXTAREA'].includes(el.tagName) && el.closest('.tab-panel.active')) return;
+  renderActivePanel();
+}
+
 function fastRefresh() {
   try {
     updateCurrencyBar();
     renderNotifications();
+    updatePageLive();
     updateGarageLive();
     updateChampLive();
     updateSeasonLive();
@@ -2190,23 +2232,16 @@ function updateGarageLive() {
 
 // ─── Targeted in-place championship updates ───────────────────────────────────
 
-let _seasonRenderSig = 0;
 function updateSeasonLive() {
   if (_activeTab !== 'prestige') return;
-  if (_seasonRenderSig !== G.season) { _seasonRenderSig = G.season; renderPrestige(); return; }
   const t = document.getElementById('season-clock-time');
   if (t) t.textContent = formatClock(getSeasonTimeLeft());
   const bar = document.getElementById('season-clock-bar');
   if (bar) bar.style.width = (100 - getSeasonTimeLeft() / SEASON_LENGTH_SEC * 100) + '%';
 }
 
-let _champRenderSig = '';
 function updateChampLive() {
   if (_activeTab !== 'championships') return;
-  const sig = G.season + '#' + G.activeChampionships.map(e => e.id + ':' + e.currentRound).join('|')
-    + '#' + (G.registrations || []).map(r => r.id).join('|');
-  if (sig !== _champRenderSig) { _champRenderSig = sig; renderChampionships(); return; }
-
   const now = Date.now();
   G.activeChampionships.forEach(entry => {
     const card = document.querySelector(`.champ-active-card[data-entry="${entry.id}"]`);
