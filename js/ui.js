@@ -1297,7 +1297,7 @@ function renderSponsors() {
               </div>
               <div class="sponsor-ips-col">
                 <div class="sponsor-ips-value" data-live-sponsor-ips="${sponsor.id}">${_sponsorRateText(sponsor)}</div>
-                ${sponsor.target ? `<div class="sponsor-held" data-live-held="${sponsor.id}">held so far: $${formatNumber(sponsor.heldBack || 0)}</div>` : ''}
+                ${sponsor.target ? `<div class="sponsor-held" data-live-held="${sponsor.id}">${_sponsorHeldText(sponsor)}</div>` : ''}
               </div>
             </div>
             <div class="sponsor-details">
@@ -1354,8 +1354,8 @@ function renderSponsors() {
               <div class="opt-cat" style="color: ${tierDef.color}">${catDef ? catDef.name : ''}</div>
             </div>
           </div>
-          <div class="opt-ips">$${formatNumber(opt.incomePerSec)}/s</div>
-          <div class="opt-held-note">${Math.round(SPONSOR_UPFRONT_SHARE * 100)}% paid now, the rest at season end if the target is met</div>
+          <div class="opt-ips">${_sponsorRateText(opt)}</div>
+          ${opt.target ? `<div class="opt-held-note">The held part is paid at season end if the target is met</div>` : ''}
           <div class="opt-details">
             <span>📅 ${contractLbl}</span>
             <span>🎯 ${targetLbl}</span>
@@ -1413,6 +1413,12 @@ function renderSponsors() {
 function _sponsorRateText(sponsor) {
   const r = getSponsorPayRates(sponsor);
   return `$${formatNumber(r.now)}/s` + (r.held > 0 ? ` <span class="sponsor-held-rate">+ $${formatNumber(r.held)}/s held</span>` : '');
+}
+
+// What happens to a sponsor's held-back money, so meeting the target visibly matters
+function _sponsorHeldText(sponsor) {
+  const held = `held so far: $${formatNumber(sponsor.heldBack || 0)}`;
+  return held + (isSponsorTargetMet(sponsor) ? ' · paid at season end' : ' · lost if the target is missed');
 }
 
 // One-line description of a sponsor offer
@@ -1493,7 +1499,7 @@ function updateSponsorsLive() {
     const ipsEl = document.querySelector(`[data-live-sponsor-ips="${s.id}"]`);
     if (ipsEl) ipsEl.innerHTML = _sponsorRateText(s);
     const heldEl = document.querySelector(`[data-live-held="${s.id}"]`);
-    if (heldEl) heldEl.textContent = 'held so far: $' + formatNumber(s.heldBack || 0);
+    if (heldEl) heldEl.textContent = _sponsorHeldText(s);
 
     const targetEl = document.querySelector(`[data-live-target="${s.id}"]`);
     if (targetEl) {

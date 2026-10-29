@@ -1263,7 +1263,9 @@ function signSponsor(slotIndex, sponsorData) {
   if (G.sponsors[slotIndex] !== null)
     return { ok: false, msg: 'Slot already occupied.' };
   G.sponsors[slotIndex] = { ...sponsorData };
-  addNotification(`Signed ${sponsorData.name} — $${formatNumber(sponsorData.incomePerSec)}/s!`, 'success');
+  const rates = getSponsorPayRates(sponsorData);
+  addNotification(`Signed ${sponsorData.name} — $${formatNumber(rates.now)}/s`
+    + (rates.held > 0 ? `, plus $${formatNumber(rates.held)}/s held until season end` : '') + '!', 'success');
   return { ok: true };
 }
 
