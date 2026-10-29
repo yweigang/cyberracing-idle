@@ -299,7 +299,7 @@ test('The last car cannot be sold if the team could not restart', () => {
   assert(g.run(`buyCar('GT4').ok`) && g.run('G.money') === 5000, 'a new GT4 can be bought, with the entry fee left');
 });
 
-test('Prestige pays PP for results and resets upgrades but keeps drivers', () => {
+test('Prestige pays PP for results and resets upgrades and the team', () => {
   const { g, a, car } = setup();
   g.run(`assignDriver('${a}', '${car}'); G.pitCrew.level = 20; G.drivers.forEach(d => DRIVER_STAT_KEYS.forEach(k => d[k] = 90));`);
   g.run('G.cars[0].upgrades.reliability = 5');
@@ -310,12 +310,23 @@ test('Prestige pays PP for results and resets upgrades but keeps drivers', () =>
   }
   const pp = g.run('calcPrestigePoints()');
   assert(pp >= 20, 'ten GT4 titles should be worth at least 20 PP, got ' + pp);
+  g.run(`G.money = 1e9; upgradeGarage();
+    hireRE('${car}', generateREOptions()[0]); G.spareEngineers.push(generateREOptions()[0]);
+    G.teamPrincipals.gt_endurance = { name: 'TP' };`);
+  const titles = g.run('G.completedChampionships.length');
   const res = g.run('doPrestige()');
   assert(res.ok && g.run('G.prestigePoints') === pp, 'PP granted');
   assert(g.run('G.cars[0].upgrades.reliability') === 2 && g.run('G.cars[0].setupChamps') === 0, '2 preparation levels kept, setup reset');
   assert(g.run('G.pitCrew.level') === 0 && g.run('G.pitCrew.size') === 1, 'pit crew rebuilt');
   assert(g.run('G.cars.length') === 1 && g.run('G.cars[0].classId') === 'GT4', 'back to one GT4');
-  assert(g.run('G.cars[0].driverId') === a && g.run('G.money') === 5000, 'driver back in the GT4, $5k');
+  assert(g.run('G.money') === 5000, '$5k');
+  assert(g.run('G.drivers.length') === 1 && g.run('G.drivers[0].id') !== a, 'all drivers leave');
+  assert(g.run('G.cars[0].driverId') === g.run('G.drivers[0].id') && g.run('G.drivers[0].tier') === 'C', 'a C rookie drives the GT4');
+  assert(g.run('getFreeScoutWait()') === 0, 'free scout still available');
+  assert(g.run('Object.keys(G.raceEngineers).length') === 0 && g.run('G.spareEngineers.length') === 0, 'race engineers leave');
+  assert(g.run('G.teamPrincipals.gt_endurance') === null, 'team principals leave');
+  assert(g.run('G.garageLevel') === 1, 'garage back to level 1');
+  assert(g.run('G.completedChampionships.length') === titles, 'championship history kept');
   assert(g.run('G.sponsors.every(s => s === null)'), 'sponsor contracts end');
   assert(g.run('calcPrestigePoints()') === 0 && g.run('isSingleSeaterUnlocked()'), 'PP counter restarts; single-seaters unlocked');
 });
@@ -639,16 +650,19 @@ test('Drivers are paid every season by tier', () => {
   assert(m - g.run('G.money') === 17000, 'A 15k + B 2k, got ' + (m - g.run('G.money')));
 });
 
-test('No salaries are due in the season of a prestige reset, and Investor Backing adds money', () => {
+test('The season of a prestige reset pays salaries, and Investor Backing adds money', () => {
   const { g } = setup();
   g.run(`scoutDriver('A'); G.prestigePoints = 10; buyPrestigeItem('seed_money'); G.reputation = 40000;`);
   assert(g.run('doPrestige().ok'), 'prestige');
   assert(g.run('G.money') === 30000, 'start money 5k + 25k');
+  g.run(`scoutDriver('B')`);
+  const m = g.run('G.money'), due = g.run('getSeasonSalaryTotal()');
+  assert(due > 0, 'a B driver draws a salary');
   g.run('endSeason()');
-  assert(g.run('G.money') >= 30000, 'no salaries paid');
+  assert(m - g.run('G.money') === due, 'salaries paid: ' + (m - g.run('G.money')) + ' of ' + due);
 });
 
-test('A prestige reset restarts at season 1 and carries legend contracts into it', () => {
+test('A prestige reset restarts at season 1 and a legend leaves with the team', () => {
   const { g, a, car } = setup();
   g.run(`assignDriver('${a}', '${car}')`);
   finishChamp(g, 'gt4_regional', car);
@@ -660,9 +674,7 @@ test('A prestige reset restarts at season 1 and carries legend contracts into it
   assert(g.run('G.season') === 1, 'back to season 1');
   assert(g.run('getSeasonTimeLeft()') > SEASON_SEC(g) - 5, 'full season clock');
   assert(g.run('_seasonChampionships().length') === 0 && g.run('G.completedChampionships.length') === 2, 'earlier runs are not this season');
-  assert(g.run('G.drivers.some(d => d.contractUntilSeason === 1)'), 'legend stays for the new season');
-  g.run('endSeason()');
-  assert(!g.run('G.drivers.some(d => d.contractUntilSeason !== undefined)'), 'legend leaves after it');
+  assert(!g.run('G.drivers.some(d => d.contractUntilSeason !== undefined)'), 'legend leaves');
 });
 
 test('A car that raced a series renews at a quarter of the fee', () => {

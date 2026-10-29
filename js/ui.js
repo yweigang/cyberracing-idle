@@ -225,20 +225,18 @@ function _updateSalaryHud() {
   const el = document.getElementById('hud-salary');
   const due = getSeasonSalaryTotal();
   const short = due > G.money;
-  el.textContent = isSalaryFreeSeason() ? 'none' : '$' + formatNumber(due);
+  el.textContent = '$' + formatNumber(due);
   el.classList.toggle('short', short);
   const rows = getPayroll();
   const sum = kind => rows.filter(r => r.kind === kind).reduce((s, r) => s + r.salary, 0);
   const count = kind => rows.filter(r => r.kind === kind).length;
-  const lines = isSalaryFreeSeason()
-    ? ['No salaries this season: the team is rebuilding after its reset.']
-    : [
-        `Paid when the season ends (in ${formatClock(getSeasonTimeLeft())})`,
-        sum('tp') ? `Team Principal: $${formatNumber(sum('tp'))}` : '',
-        count('re') ? `Race engineers (${count('re')}): $${formatNumber(sum('re'))}` : '',
-        count('driver') ? `Drivers (${count('driver')}): $${formatNumber(sum('driver'))}` : '',
-        short ? `$${formatNumber(due - G.money)} short: the best-paid people would leave unpaid.` : '',
-      ];
+  const lines = [
+    `Paid when the season ends (in ${formatClock(getSeasonTimeLeft())})`,
+    sum('tp') ? `Team Principal: $${formatNumber(sum('tp'))}` : '',
+    count('re') ? `Race engineers (${count('re')}): $${formatNumber(sum('re'))}` : '',
+    count('driver') ? `Drivers (${count('driver')}): $${formatNumber(sum('driver'))}` : '',
+    short ? `$${formatNumber(due - G.money)} short: the best-paid people would leave unpaid.` : '',
+  ];
   document.getElementById('hud-salary-stat').title = lines.filter(Boolean).join('\n');
 }
 
@@ -1605,7 +1603,7 @@ function renderStaff() {
     <div class="staff-overview-bar">
       <div class="staff-overview-stat">
         <span class="staff-overview-label">Season Salary Bill</span>
-        <span class="staff-overview-value" style="color:var(--red)" title="Staff and drivers">${isSalaryFreeSeason() ? 'None this season (reset)' : totalSalary > 0 ? '-$' + formatNumber(totalSalary) + '/season' : 'No salaries'}</span>
+        <span class="staff-overview-value" style="color:var(--red)" title="Staff and drivers">${totalSalary > 0 ? '-$' + formatNumber(totalSalary) + '/season' : 'No salaries'}</span>
       </div>
     </div>`;
 
@@ -1808,9 +1806,12 @@ function _confirmPrestige() {
     `Money: $${formatNumber(G.money)} → $${formatNumber(getPrestigeStartMoney())}`,
     `Cars: ${tokens ? `the best ${tokens} plus a GT4` : 'one stock GT4'} (${G.cars.length} now)`,
     'Running championships, registrations and sponsor contracts',
+    'All drivers, team principals and race engineers: a free rookie drives the GT4',
+    'Garage: rebuilt at the size the kept cars need',
+    'REP, except what Fan Base keeps',
     'Pit crew, car preparation above level 2, setup knowledge and HQ',
   ];
-  const kept = 'Drivers, licenses, REP, garage, staff and PP. The team starts again at season 1, with no salaries due.';
+  const kept = 'PP, shop bonuses and championship history. The team starts again at season 1.';
   showConfirmDialog({
     title: `Prestige reset for +${ppGain} PP?`,
     body: `<ul class="dialog-list">
@@ -1851,7 +1852,7 @@ function renderPrestige() {
         <span>${completedThisSeason.length} championship${completedThisSeason.length !== 1 ? 's' : ''} completed</span>
         <span>${titles} title${titles !== 1 ? 's' : ''}</span>
         <span>${G.activeChampionships.length} in progress</span>
-        <span title="Staff and drivers. If the money doesn't cover it, the best-paid people leave.">Salaries due: ${isSalaryFreeSeason() ? 'none (reset season)' : totalSalary > 0 ? '$' + formatNumber(totalSalary) : 'none'}</span>
+        <span title="Staff and drivers. If the money doesn't cover it, the best-paid people leave.">Salaries due: ${totalSalary > 0 ? '$' + formatNumber(totalSalary) : 'none'}</span>
       </div>
     </div>`;
 
@@ -1934,7 +1935,7 @@ function renderPrestige() {
       <div class="prestige-pp">You have <span class="pp-value">${G.prestigePoints} PP</span></div>
       <div class="prestige-gain">Resetting now grants <span class="pp-gain">+${ppGain} PP</span>
         <span class="prestige-warning">(titles and podiums since the last reset, 1 PP per ${formatNumber(PRESTIGE_REP_PER_PP)} REP gained, ${HQ_PP_PER_LEVEL} PP per HQ level, sponsor PP bonuses)</span></div>
-      <div class="prestige-warning">Starts the team over: $${formatNumber(getPrestigeStartMoney())}, one stock GT4 (plus a car per Development Token), no sponsors, HQ rebuilt. REP resets to ${getFanBaseShare() ? Math.round(getFanBaseShare() * 100) + '% (Fan Base)' : 'zero'}, so classes, series and fame must be earned again. Drivers, licenses, garage, staff and PP stay. The team starts again at season 1, with no salaries due.
+      <div class="prestige-warning">Starts the team over: $${formatNumber(getPrestigeStartMoney())}, one stock GT4 (plus a car per Development Token), no sponsors, HQ rebuilt. REP resets to ${getFanBaseShare() ? Math.round(getFanBaseShare() * 100) + '% (Fan Base)' : 'zero'}, so classes, series and fame must be earned again. All drivers, team principals and race engineers leave and the garage is rebuilt; PP, shop bonuses and championship history stay. The team starts again at season 1.
         <br>${fieldNote}
         ${_prestigeBuyWarning(ppGain)}
         ${(G.prestige.prestigeCount || 0) === 0 ? '<br>Your first reset unlocks the <b>Single-Seater Pathway</b> (F4 → F1).' : ''}</div>

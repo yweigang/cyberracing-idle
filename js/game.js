@@ -1585,23 +1585,14 @@ function getPayroll() {
   return rows.filter(r => r.salary > 0);
 }
 
-// The season right after a prestige reset is salary-free
-function isSalaryFreeSeason() {
-  return G.salaryFreeSeason === G.season;
-}
-
 // Salaries due at the end of this season
 function getSeasonSalaryTotal() {
-  return isSalaryFreeSeason() ? 0 : getPayroll().reduce((sum, r) => sum + r.salary, 0);
+  return getPayroll().reduce((sum, r) => sum + r.salary, 0);
 }
 
 // Pays the season's salaries. When the money doesn't cover them, the best-paid people
 // leave unpaid until it does, so money never goes negative.
 function deductSeasonSalaries() {
-  if (isSalaryFreeSeason()) {
-    addNotification(`No salaries for season ${G.season}: the team was rebuilding after its reset.`, 'info');
-    return;
-  }
   const rows = getPayroll().sort((a, b) => b.salary - a.salary);
   let total = rows.reduce((sum, r) => sum + r.salary, 0);
   while (rows.length && total > Math.max(0, G.money)) {
@@ -1667,6 +1658,7 @@ function _migratePrestige() {
 // Ensure all drivers have license data (for saves created before the license system)
 function _migrateDriverLicenses() {
   if (G.licensePtMultiplier === undefined) G.licensePtMultiplier = LICENSE_CONFIG.defaultMultiplier;
+  delete G.salaryFreeSeason;      // reset seasons pay salaries like any other
   G.drivers.forEach(d => {
     if (!d.licenses) d.licenses = ['GT4'];
     if (!d.licensePoints) d.licensePoints = {};
@@ -2010,18 +2002,20 @@ function doPrestige() {
   G.prestige.totalResets++;
   const singleSeaterJustUnlocked = prevPrestigeCount === 0;
 
-  // Reset money, end all championships and start over at season 1, salary-free.
+  // Reset money, end all championships and start over at season 1.
   // The old season ends without its season-end steps (no aging, sponsor payouts or
-  // salaries); legend contracts running out with it move to the new one.
+  // salaries).
   G.money = getPrestigeStartMoney();
   G.activeChampionships = [];
-  G.drivers.filter(d => d.contractUntilSeason !== undefined)
-    .forEach(d => { d.contractUntilSeason = 1 + Math.max(0, d.contractUntilSeason - G.season); });
   G.season = 1;
   G.seasonStartTime = Date.now();
   G.lastSeasonSummary = null;
-  G.salaryFreeSeason = G.season;
-  G.drivers.forEach(d => { d.seasonClassTier = 0; });
+
+  // The whole team leaves: drivers, team principals and race engineers
+  G.drivers = [];
+  G.teamPrincipals = { gt_endurance: null, single_seater: null };
+  G.raceEngineers = {};
+  G.spareEngineers = [];
 
   // Cars: development tokens keep the highest-class cars, the rest are scrapped.
   // There is always at least one GT4 to restart with.
@@ -2033,11 +2027,12 @@ function doPrestige() {
     const ownGT4 = G.cars.find(c => c.classId === 'GT4');
     if (ownGT4) keptCars.push(ownGT4);
   }
-  G.cars.filter(c => !keptCars.includes(c)).forEach(c => _releaseCarEngineer(c.id));
   G.cars = keptCars;
   if (!G.cars.some(c => c.classId === 'GT4')) {
     G.cars.push({ id: 'car_' + G.nextCarId++, classId: 'GT4', name: 'GT4 #1', upgrades: { reliability: 0 }, driverId: null, coDriverIds: [], championshipId: null, autoRenew: null });
   }
+  // The garage is rebuilt too, at the smallest level that holds the kept cars
+  G.garageLevel = (GARAGE_UPGRADES.find(g => g.slots >= G.cars.length) || GARAGE_UPGRADES[GARAGE_MAX_LEVEL - 1]).level;
 
   // Cars keep 2 preparation levels and lose their setup knowledge; the pit crew is
   // rebuilt at the head-start level
@@ -2047,22 +2042,14 @@ function doPrestige() {
     car.seriesSlots = [];
     car.championshipId = null;
     car.autoRenew = null;
+    car.driverId = null;
+    car.coDriverIds = [];
   });
   const headStart = G.prestige.permanentBonuses.headStartLevels || 0;
   G.pitCrew = { level: Math.min(PIT_CREW.maxLevel, headStart * 2), size: 1 };
 
-  // Drivers keep their seats only in surviving cars
-  G.drivers.forEach(d => { if (d.carId && !G.cars.some(c => c.id === d.carId)) d.carId = null; });
-  G.cars.forEach(c => {
-    if (c.driverId && !G.drivers.some(d => d.id === c.driverId)) c.driverId = null;
-    c.coDriverIds = (c.coDriverIds || []).filter(id => G.drivers.some(d => d.id === id));
-    if (!c.driverId) c.driverId = c.coDriverIds.shift() || null;
-  });
-  const gt4 = G.cars.find(c => c.classId === 'GT4' && !c.driverId);
-  if (gt4) {
-    const free = G.drivers.filter(d => !d.carId).sort((a, b) => calcDriverSkill(b, 'sprint') - calcDriverSkill(a, 'sprint'))[0];
-    if (free) assignDriver(free.id, gt4.id);
-  }
+  // A new team starts with one free rookie in the GT4, like a new game
+  _signStarterDriver(G.cars.find(c => c.classId === 'GT4'));
 
   // Sponsor contracts end; a fresh set of offers is waiting
   G.sponsors = [null, null, null, null, null];
@@ -2072,7 +2059,7 @@ function doPrestige() {
   // HQ facilities are rebuilt each run (their levels were paid out as PP)
   G.hq = { simulator: 0, composites: 0, hospitality: 0 };
 
-  addNotification(`Prestige! +${ppGain} PP. The team starts over with ${G.cars.length} car${G.cars.length > 1 ? 's' : ''} and $${formatNumber(G.money)}. Season ${G.season} begins, with no salaries due.`, 'prestige');
+  addNotification(`Prestige! +${ppGain} PP. The team starts over with ${G.cars.length} car${G.cars.length > 1 ? 's' : ''} and $${formatNumber(G.money)}. Season ${G.season} begins.`, 'prestige');
   if (singleSeaterJustUnlocked) {
     addNotification('🏎️ Single-Seater Pathway Unlocked! F4 is now available.', 'prestige');
   }
@@ -2351,10 +2338,16 @@ function resetGame() {
 }
 
 function _setupNewGame() {
-  const res = scoutDriver('C', false);
-  if (res.ok) assignDriver(res.driver.id, G.cars[0].id);
-  G.nextFreeScoutAt = 0;
+  _signStarterDriver(G.cars[0]);
   G.lastSeenVersion = GAME_VERSION;
+}
+
+// A free C driver (never special) for the car; the free scout stays available
+function _signStarterDriver(car) {
+  G.nextFreeScoutAt = 0;
+  const res = scoutDriver('C', false);
+  if (res.ok) assignDriver(res.driver.id, car.id);
+  G.nextFreeScoutAt = 0;
 }
 
 // ─── Formatting Helpers ───────────────────────────────────────────────────────
