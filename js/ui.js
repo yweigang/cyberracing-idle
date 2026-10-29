@@ -1099,7 +1099,7 @@ function renderDrivers() {
             <div class="driver-primary-badge" style="color: ${tierDef.color}">★ ${primaryLabel}</div>
             ${getSpecialDef(driver) ? `<div class="driver-special-badge">✦ Special · ${getSpecialDef(driver).quirk}</div>` : ''}
             <div class="driver-career-row">
-              <span class="driver-age">Age ${age}</span>
+              <span class="driver-age" title="A year older in ${SEASONS_PER_YEAR - (driver.seasonsAtAge || 0)} season${SEASONS_PER_YEAR - (driver.seasonsAtAge || 0) > 1 ? 's' : ''}">Age ${age}</span>
               <span class="driver-stage-badge" style="color:${stage.color};border-color:${stage.color}">${stage.label} ${stage.trajectory}</span>
               ${retiringLabel ? `<span class="driver-retiring-badge">${retiringLabel}</span>` : ''}
             </div>
@@ -1796,6 +1796,11 @@ function _prestigeBuyWarning(ppGain) {
   return `<br><span class="dialog-warn">After this reset you'd have ${G.prestigePoints + ppGain} PP: the cheapest shop item costs ${cheapest.cost} PP.</span>`;
 }
 
+// "34 → 35" on a birthday, otherwise just the age
+function _ageChangeText(rec) {
+  return rec.ageBefore === rec.ageAfter ? `${rec.ageAfter}` : `${rec.ageBefore} → ${rec.ageAfter}`;
+}
+
 // Asks before a prestige reset, listing what is kept and lost
 function _confirmPrestige() {
   const ppGain = calcPrestigePoints();
@@ -1845,7 +1850,7 @@ function renderPrestige() {
     <div class="season-clock">
       <div class="season-clock-top">
         <span class="season-clock-time" id="season-clock-time">${formatClock(leftSec)}</span>
-        <span class="season-clock-sub">until the season ends · drivers age +1 · contracts and salaries settle</span>
+        <span class="season-clock-sub">until the season ends · drivers train, and age a year every ${SEASONS_PER_YEAR} seasons · contracts and salaries settle</span>
       </div>
       <div class="round-progress-wrap"><div class="round-progress-bar" id="season-clock-bar" style="width:${seasonPct}%"></div></div>
       <div class="season-clock-stats">
@@ -1880,7 +1885,7 @@ function renderPrestige() {
         html += `
           <div class="sds-row sds-retired">
             <span class="sds-name">${rec.name}</span>
-            <span class="sds-age">${rec.ageBefore} → ${rec.ageAfter}</span>
+            <span class="sds-age">${_ageChangeText(rec)}</span>
             <span class="sds-stage" style="color:var(--red)">Retired</span>
           </div>`;
         return;
@@ -1909,7 +1914,7 @@ function renderPrestige() {
       html += `
         <div class="sds-row">
           <span class="sds-name">${rec.name}</span>
-          <span class="sds-age">${rec.ageBefore} → ${rec.ageAfter}</span>
+          <span class="sds-age">${_ageChangeText(rec)}</span>
           <span class="sds-stage" style="color:${stageColor}">${stageLbl}</span>
           <span class="sds-stats">${statPills || '<span class="sds-nochange">No change</span>'}</span>
           ${lpPills ? `<span class="sds-lp-group">${lpPills}</span>` : ''}

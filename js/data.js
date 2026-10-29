@@ -565,6 +565,9 @@ const DRIVER_STAT_LABELS = {
   fitness:        'Fitness',
 };
 
+// Drivers turn a year older once every this many seasons
+const SEASONS_PER_YEAR = 6;
+
 // Starting age range when scouting a new driver
 const DRIVER_AGE_RANGES = {
   C: { min: 18, max: 35 },

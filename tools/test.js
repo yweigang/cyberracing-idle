@@ -542,6 +542,19 @@ test('Banked XP trains drivers at season end', () => {
   assert(d.xp === 50, 'leftover XP kept, got ' + d.xp);
 });
 
+test('Drivers age a year every SEASONS_PER_YEAR seasons and retire on schedule', () => {
+  const { g, a } = setup();
+  g.run(`Object.assign(G.drivers.find(d => d.id === '${a}'), { age: 20, seasonsAtAge: 0, retirementAge: 22 })`);
+  const n = g.run('SEASONS_PER_YEAR');
+  for (let i = 1; i < n; i++) g.run('endSeason()');
+  assert(driver(g, a).age === 20, 'no birthday before the last season of the year');
+  const summary = g.run('endSeason()');
+  assert(driver(g, a).age === 21, 'a year older after SEASONS_PER_YEAR seasons');
+  assert(summary.driverChanges.find(c => c.name === driver(g, a).name).ageAfter === 21, 'summary shows the birthday');
+  for (let i = 0; i < n; i++) g.run('endSeason()');
+  assert(!driver(g, a), 'retires at the retirement age');
+});
+
 test('The season ends early once nothing races and nothing fits', () => {
   const { g, a, car } = setup();
   g.run(`assignDriver('${a}', '${car}')`);

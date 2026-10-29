@@ -1846,7 +1846,8 @@ function endSeason(endedAt = getSeasonEndTime()) {
       });
     });
 
-  // 5. Age all drivers, train XP into stats, apply career stat changes, handle retirements
+  // 5. Train XP into stats, age drivers whose birthday it is (with their career stat
+  // change), handle retirements
   // Snapshot stats before changes so we can return a diff for the UI
   const snapshots = G.drivers.map(d => ({
     id: d.id, name: d.name,
@@ -1856,9 +1857,14 @@ function endSeason(endedAt = getSeasonEndTime()) {
 
   const retirees = [];
   G.drivers.forEach(d => {
-    d.age = (d.age || 20) + 1;
-    if (d.age === 40) addNotification(`${d.name} is in their final seasons.`, 'warning');
-    _applyDriverSeasonAging(d);
+    d.age = d.age || 20;
+    d.seasonsAtAge = (d.seasonsAtAge || 0) + 1;
+    if (d.seasonsAtAge >= SEASONS_PER_YEAR) {
+      d.seasonsAtAge = 0;
+      d.age++;
+      if (d.age === 40) addNotification(`${d.name} is in their final seasons.`, 'warning');
+      _applyDriverSeasonAging(d);
+    }
     _applyDriverTraining(d);
     if (d.age >= (d.retirementAge || 43)) retirees.push(d.id);
   });
@@ -1866,7 +1872,7 @@ function endSeason(endedAt = getSeasonEndTime()) {
   // Build driver change records before retirements remove drivers
   const driverChanges = snapshots.map(snap => {
     const d = G.drivers.find(x => x.id === snap.id);
-    const ageAfter  = snap.ageBefore + 1;
+    const ageAfter  = d ? d.age : snap.ageBefore;
     const lpGained  = lpByDriver[snap.id] || {};
     if (!d || retirees.includes(snap.id)) {
       return { name: snap.name, ageBefore: snap.ageBefore, ageAfter, retired: true, changes: {}, lpGained };
