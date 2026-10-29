@@ -222,12 +222,6 @@ const TIER_STARTING_LICENSES = {
   L: ['GT4', 'GT3', 'LMP3', 'LMP2', 'HYPERCAR', 'F4', 'F3', 'F2', 'F1'],
 };
 
-// Global LP multiplier config — wire prestige scaling here when values are finalised
-const LICENSE_CONFIG = {
-  defaultMultiplier: 1.0,
-  // prestigeMultipliers: { 0: 1.0, 1: 1.5, 2: 2.0, 3: 3.0 },  // TBD
-};
-
 // ─── Balance of Performance ───────────────────────────────────────────────────
 
 // Cars in a class are balanced: performance comes from drivers, the pit crew and a

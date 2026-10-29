@@ -68,7 +68,6 @@ function createDefaultState() {
     teamPrincipals: { gt_endurance: null, single_seater: null },
     raceEngineers: {},
     spareEngineers: [],        // paid race engineers whose car was sold, waiting for a car
-    licensePtMultiplier: LICENSE_CONFIG.defaultMultiplier,
     hq: { simulator: 0, composites: 0, hospitality: 0 },
     pitCrew: { level: 0, size: 1 },
     notifications: [],
@@ -1657,7 +1656,7 @@ function _migratePrestige() {
 
 // Ensure all drivers have license data (for saves created before the license system)
 function _migrateDriverLicenses() {
-  if (G.licensePtMultiplier === undefined) G.licensePtMultiplier = LICENSE_CONFIG.defaultMultiplier;
+  delete G.licensePtMultiplier;   // unused global LP multiplier from older saves
   delete G.salaryFreeSeason;      // reset seasons pay salaries like any other
   G.drivers.forEach(d => {
     if (!d.licenses) d.licenses = ['GT4'];
@@ -1785,7 +1784,7 @@ function awardChampionshipLP(driver, classId, finalPos, carId) {
   if (!driver) return {};
   const lpTable = LP_EARN_TABLE[classId] || {};
   const factor  = LICENSE_RESULT_FACTORS[Math.min(finalPos, LICENSE_RESULT_FACTORS.length) - 1];
-  const mult    = (G.licensePtMultiplier || 1.0) * (1 + getREBonuses(carId).coachBonus) * factor;
+  const mult    = (1 + getREBonuses(carId).coachBonus) * factor;
   if (!driver.licensePoints) driver.licensePoints = {};
   if (!driver.licenses) driver.licenses = ['GT4'];
 
