@@ -406,7 +406,7 @@ const CHAMPIONSHIPS = [
     name: 'F2 Global Series',
     shortName: 'F2 Global',
     allowedClasses: ['F2'],
-    rounds: 16,
+    rounds: 15,
     roundDurationSec: 120,
     repRequired: 15000,
     prerequisiteChampionship: 'formula_3_championship',

@@ -805,6 +805,20 @@ function carWithDriver(g, classId, tier = 'A', special = null) {
   })()`);
 }
 
+test('Two F2 championships fit into one season with auto-renew', () => {
+  const { g } = setup();
+  const { car } = carWithDriver(g, 'F2', 'S');
+  g.run(`G.prestige.prestigeCount = 1; G.reputation = 1e6; G.champCompletions.formula_3_championship = 1;
+    G.drivers.forEach(d => DRIVER_STAT_KEYS.forEach(k => d[k] = 100)); G.cars.find(c => c.id === '${car}').upgrades.reliability = 20;`);
+  const r = g.run(`enterChampionship('formula_2_championship', '${car}')`);
+  assert(r.ok, 'enter failed: ' + r.msg);
+  const season = g.run('G.season');
+  g.tickFor(SEASON_SEC(g), 10);
+  assert(g.run('G.season') === season + 1, 'season ended');
+  const done = g.run(`_seasonChampionships(${season}).filter(c => c.definitionId === 'formula_2_championship').length`);
+  assert(done === 2, 'two F2 championships finished this season, got ' + done);
+});
+
 test('Driver salaries scale with the highest class raced this season', () => {
   const { g } = setup();
   const { car, driver } = carWithDriver(g, 'LMP2', 'A');
