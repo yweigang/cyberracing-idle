@@ -52,6 +52,7 @@ function createDefaultState() {
       lastPrestigeAt: 0,       // timestamp of the last reset (results after it earn PP)
       repAtLastPrestige: 0,
       sponsorPP: 0,            // sponsor PP bonuses, paid out at the next reset
+      lifetimePP: 0,           // PP earned over all resets; spending doesn't lower it
       permanentBonuses: {
         incomeMultiplier: 1.0,   // race rating multiplier (Performance Programme)
         scoutDiscount: 0,
@@ -315,7 +316,7 @@ function buyCar(classId) {
     return { ok: false, msg: 'Single-Seater Pathway not yet unlocked.' };
   }
   if (G.reputation < cls.repRequired) return { ok: false, msg: `Need ${formatNumber(cls.repRequired)} REP.` };
-  if (cls.ppRequired && G.prestigePoints < cls.ppRequired) return { ok: false, msg: `Need ${cls.ppRequired} PP.` };
+  if (!meetsPPRequirement(cls)) return { ok: false, msg: `Earn ${cls.ppRequired} PP in total first.` };
 
   const totalSlots = getGarageSlots(G.garageLevel);
   if (G.cars.length >= totalSlots) return { ok: false, msg: 'Expand your garage to buy more cars.' };
@@ -393,7 +394,7 @@ function getRestartCost() {
   let best = Infinity;
   CAR_CLASSES.forEach(cls => {
     if (cls.pathway === 'single_seater' && !isSingleSeaterUnlocked()) return;
-    if (G.reputation < cls.repRequired || (cls.ppRequired && G.prestigePoints < cls.ppRequired)) return;
+    if (G.reputation < cls.repRequired || !meetsPPRequirement(cls)) return;
     const fees = CHAMPIONSHIPS.filter(c => c.allowedClasses.includes(cls.id)
       && (!c.pathway || isSingleSeaterUnlocked())
       && G.reputation >= (c.repRequired || 0) && checkChampionshipPrerequisite(c)).map(c => getClassEntryFee(c, cls.id));
@@ -1655,6 +1656,11 @@ function _migratePrestige() {
       G.prestigePoints = 0;
     }
   }
+  if (G.prestige.lifetimePP === undefined) {
+    // Not tracked before: PP still held plus PP spent in the shop
+    G.prestige.lifetimePP = G.prestigePoints + (G.prestige.purchased || [])
+      .reduce((sum, id) => sum + ((PRESTIGE_ITEMS.find(i => i.id === id) || {}).cost || 0), 0);
+  }
   _migrateDriverAge();
 }
 
@@ -1947,6 +1953,12 @@ function getCheapestPrestigeItem() {
     .sort((a, b) => a.cost - b.cost)[0] || null;
 }
 
+// Car classes gated by PP (Formula World) count every PP ever earned, so spending
+// PP in the shop never locks them again
+function meetsPPRequirement(cls) {
+  return !cls.ppRequired || (G.prestige.lifetimePP || 0) >= cls.ppRequired;
+}
+
 function canPrestige() {
   return calcPrestigePoints() >= PRESTIGE_MIN_GAIN;
 }
@@ -1986,6 +1998,7 @@ function doPrestige() {
 
   const ppGain = calcPrestigePoints();
   G.prestigePoints += ppGain;
+  G.prestige.lifetimePP = (G.prestige.lifetimePP || 0) + ppGain;
   G.prestige.lastPrestigeSeason = G.season;
   G.prestige.lastPrestigeAt = Date.now();
   // REP resets too; each Fan Base purchase keeps 1% of it

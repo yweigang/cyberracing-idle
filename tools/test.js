@@ -307,6 +307,21 @@ test('Prestige pays PP for results and resets upgrades but keeps drivers', () =>
   assert(g.run('calcPrestigePoints()') === 0 && g.run('isSingleSeaterUnlocked()'), 'PP counter restarts; single-seaters unlocked');
 });
 
+test('Formula World unlocks on lifetime PP, so spending PP keeps it open', () => {
+  const { g } = setup();
+  g.run(`G.prestige.lastPrestigeAt = 0; G.reputation = 1e6; G.prestige.sponsorPP = 600; doPrestige();`);
+  const earned = g.run('G.prestige.lifetimePP');
+  assert(earned >= 500 && earned === g.run('G.prestigePoints'), 'reset adds to lifetime PP');
+  g.run(`['wind_tunnel', 'dev_token'].forEach(id => { while (buyPrestigeItem(id).ok); });`);
+  assert(g.run('G.prestigePoints') < 500, 'PP spent below the requirement');
+  assert(g.run(`meetsPPRequirement(getCarClassById('F1'))`), 'F1 stays unlocked');
+  assert(!g.run(`(G.prestige.lifetimePP = 499, meetsPPRequirement(getCarClassById('F1')))`), '499 lifetime PP is not enough');
+  // An old save: PP still held plus PP spent in the shop
+  g.run(`G.prestige.lifetimePP = undefined; G.prestigePoints = 40; G.prestige.purchased = ['legend_contract', 'fan_base']; saveGame(); loadGame();`);
+  const spent = g.run(`PRESTIGE_ITEMS.filter(i => ['legend_contract', 'fan_base'].includes(i.id)).reduce((s, i) => s + i.cost, 0)`);
+  assert(g.run('G.prestige.lifetimePP') === 40 + spent, 'migration counts held and spent PP');
+});
+
 test('Prestige shop items apply their effects', () => {
   const { g } = setup();
   g.run('G.prestigePoints = 10000');

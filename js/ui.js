@@ -476,7 +476,7 @@ function renderGarage() {
     if (cls.pathway === 'single_seater' && !isSingleSeaterUnlocked()) return;
     const owned      = G.cars.filter(c => c.classId === cls.id).length;
     const repOk      = G.reputation >= cls.repRequired;
-    const ppOk       = cls.ppRequired === 0 || G.prestigePoints >= cls.ppRequired;
+    const ppOk       = meetsPPRequirement(cls);
     const moneyOk    = G.money >= cls.baseCost;
     const classSlotOk  = owned < cls.maxOwned;
     const garageSlotOk = usedSlots < totalSlots;
@@ -486,7 +486,7 @@ function renderGarage() {
 
     let lockMsg = '';
     if (!repOk)          lockMsg = `Requires ${formatNumber(cls.repRequired)} REP`;
-    else if (!ppOk)      lockMsg = `Requires ${cls.ppRequired} PP`;
+    else if (!ppOk)      lockMsg = `Requires ${cls.ppRequired} PP earned in total (${G.prestige.lifetimePP || 0} so far)`;
     else if (!garageSlotOk) lockMsg = 'Garage full: expand it or sell a car';
     else if (!classSlotOk)  lockMsg = `Max ${cls.maxOwned} owned`;
 
@@ -2167,7 +2167,7 @@ function updateGarageLive() {
     const owned        = G.cars.filter(c => c.classId === cls.id).length;
     const garageSlotOk = usedSlots < totalSlots;
     const canBuy = G.reputation >= cls.repRequired &&
-                   (!cls.ppRequired || G.prestigePoints >= cls.ppRequired) &&
+                   meetsPPRequirement(cls) &&
                    G.money >= cls.baseCost &&
                    owned < cls.maxOwned &&
                    garageSlotOk;
