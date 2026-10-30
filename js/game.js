@@ -1408,7 +1408,7 @@ function getREBonuses(carId) {
   const re = getREForCar(carId);
   if (!re) return { setupBonus: 0, reliBonus: 0, pitBonus: 0, coachBonus: 0, dataBonus: 0 };
   return {
-    setupBonus: re.setupMastery           / 100 * 0.10,  // up to +10% all upgrade mults
+    setupBonus: re.setupMastery           / 100 * 0.10,  // up to +10% car rating
     reliBonus:  re.reliabilityEngineering / 100 * 0.20,  // up to +20% reliability mult
     pitBonus:   re.pitWallStrategy        / 100 * 0.05,  // up to +5% champ income bonus
     coachBonus: re.driverCoach            / 100 * 0.50,  // up to +50% driver XP

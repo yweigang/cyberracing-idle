@@ -564,6 +564,10 @@ function renderGarage() {
       const dnfPct = Math.round(calcDNFChance(car) * 100);
       const endSize = getCarLineupSize(car);
       const endRating = endSize > 1 ? Math.round(calcCarRating(car, 'endurance', false, endSize)) : null;
+      const setupFull = Math.round(SETUP_BONUS_MAX / SETUP_BONUS_PER_CHAMP);
+      const setupTitle = `Setup knowledge: +${SETUP_BONUS_PER_CHAMP * 100}% car rating per championship finished in this car, `
+        + `up to +${SETUP_BONUS_MAX * 100}% after ${setupFull}. It belongs to this car and resets with prestige.`;
+      const engineerSetup = getREBonuses(car.id).setupBonus;
 
       carsHtml += `
         <div class="car-card" style="--cls-color: ${cls.color}">
@@ -575,7 +579,7 @@ function renderGarage() {
             <div class="car-stats-right">
               <div class="car-rating">★ ${rating}</div>
               <div class="car-mult">car ${baseRating} · driver ×${paceMult.toFixed(2)} · DNF ${dnfPct}%</div>
-              <div class="car-mult">setup +${(getSetupBonus(car) * 100).toFixed(1)}% (max ${SETUP_BONUS_MAX * 100}%) · crew +${(getPitCrewBonus(car) * 100).toFixed(1)}%</div>
+              <div class="car-mult"><span title="${setupTitle}">setup +${(getSetupBonus(car) * 100).toFixed(1)}% (${Math.min(car.setupChamps || 0, setupFull)}/${setupFull} champs)</span>${engineerSetup ? ` · <span title="The race engineer's Setup Mastery">engineer +${(engineerSetup * 100).toFixed(0)}%</span>` : ''} · crew +${(getPitCrewBonus(car) * 100).toFixed(1)}%</div>
               ${endRating !== null ? `<div class="car-mult">endurance ★ ${endRating} with ${Math.min(getCarLineup(car).length, endSize)}/${endSize} drivers · DNF ${Math.round(calcDNFChance(car, 'endurance', endSize) * 100)}%</div>` : ''}
               ${(() => {
                 const sell = canSellCar(car.id);

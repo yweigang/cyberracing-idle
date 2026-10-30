@@ -4,6 +4,14 @@
 
 const CHANGELOG = [
   {
+    version: '0.8.1',
+    date: '2026-10-30',
+    title: 'Clearer setup bonus',
+    changes: [
+      'Car cards now show setup knowledge as championships finished out of 6 (e.g. "setup +0.5% (1/6 champs)"), and the race engineer\'s Setup Mastery bonus next to it. That bonus always counted toward the car rating but was not shown on the car. Hover either for details.',
+    ],
+  },
+  {
     version: '0.8.0',
     date: '2026-10-29',
     title: 'Longer careers, real resets',
